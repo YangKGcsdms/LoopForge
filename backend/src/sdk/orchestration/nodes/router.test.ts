@@ -6,12 +6,14 @@ import {
   routeModel,
   modelResolver,
   availablePool,
-  purposeModel,
-  purposeResolver,
+  routingFor,
+  resolverFor,
   routingScheme,
   poolFor,
   MODEL_POOL,
   CLAUDE_POOL,
+  CURSOR_ROUTING,
+  CLAUDE_ROUTING,
 } from "./router.js";
 
 describe("tierOf（与真实模型列表观察到的归类一致）", () => {
@@ -77,23 +79,18 @@ describe("availablePool", () => {
   });
 });
 
-describe("多 provider 路由池", () => {
+describe("多 provider 路由池（全名，不收敛）", () => {
   it("poolFor：cursor → MODEL_POOL，claude-agent → CLAUDE_POOL", () => {
     assert.equal(poolFor("cursor"), MODEL_POOL);
     assert.equal(poolFor("claude-agent"), CLAUDE_POOL);
   });
-  it("Claude 池用别名路由：plan→opus、execute→haiku、review→sonnet、test→haiku", () => {
-    assert.equal(purposeModel("plan", CLAUDE_POOL).id, "opus");
-    assert.equal(purposeModel("execute", CLAUDE_POOL).id, "haiku");
-    assert.equal(purposeModel("review", CLAUDE_POOL).id, "sonnet");
-    assert.equal(purposeModel("test", CLAUDE_POOL).id, "haiku");
-  });
-  it("Claude 池 displayName 带版本号", () => {
-    assert.equal(CLAUDE_POOL.find((m) => m.id === "opus")?.displayName, "Claude Opus 4.8");
+  it("Claude 池用全名（非别名）+ 带版本 displayName", () => {
+    assert.deepEqual(CLAUDE_POOL.map((m) => m.id), ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]);
+    assert.equal(CLAUDE_POOL.find((m) => m.id === "claude-opus-4-8")?.displayName, "Claude Opus 4.8");
   });
   it("availablePool 可传入指定池", () => {
-    const live = new Set(["opus"]);
-    assert.deepEqual(availablePool(live, CLAUDE_POOL).map((m) => m.id), ["opus"]);
+    const live = new Set(["claude-opus-4-8"]);
+    assert.deepEqual(availablePool(live, CLAUDE_POOL).map((m) => m.id), ["claude-opus-4-8"]);
   });
 });
 
@@ -105,30 +102,36 @@ describe("modelResolver（按难度，保留备用）", () => {
   });
 });
 
-describe("按用途路由（控制成本：opus 只给出方案/把控）", () => {
-  it("purposeModel：plan→opus，execute/validate→composer，review→sonnet，test→kimi", () => {
-    assert.equal(purposeModel("plan", MODEL_POOL).id, "claude-opus-4-8");
-    assert.equal(purposeModel("control", MODEL_POOL).id, "claude-opus-4-8");
-    assert.equal(purposeModel("execute", MODEL_POOL).id, "composer-2.5");
-    assert.equal(purposeModel("validate", MODEL_POOL).id, "composer-2.5");
-    assert.equal(purposeModel("review", MODEL_POOL).id, "claude-sonnet-4-6");
-    assert.equal(purposeModel("test", MODEL_POOL).id, "kimi-k2.5");
+describe("两套独立路由策略（不收敛，各用各的模型名）", () => {
+  it("CURSOR_ROUTING：plan→opus、execute/validate→composer、review→sonnet、test→kimi", () => {
+    assert.equal(CURSOR_ROUTING.plan, "claude-opus-4-8");
+    assert.equal(CURSOR_ROUTING.execute, "composer-2.5");
+    assert.equal(CURSOR_ROUTING.validate, "composer-2.5");
+    assert.equal(CURSOR_ROUTING.review, "claude-sonnet-4-6");
+    assert.equal(CURSOR_ROUTING.test, "kimi-k2.5");
   });
-  it("首选模型不在池内 → 退档（plan 无 opus 时退到 cheap）", () => {
-    const poolNoOpus = MODEL_POOL.filter((m) => m.id !== "claude-opus-4-8");
-    assert.ok(["composer-2.5", "kimi-k2.5", "claude-haiku-4-5"].includes(purposeModel("plan", poolNoOpus).id));
+  it("CLAUDE_ROUTING：plan→opus、execute/validate/test→haiku、review→sonnet（全名）", () => {
+    assert.equal(CLAUDE_ROUTING.plan, "claude-opus-4-8");
+    assert.equal(CLAUDE_ROUTING.execute, "claude-haiku-4-5");
+    assert.equal(CLAUDE_ROUTING.validate, "claude-haiku-4-5");
+    assert.equal(CLAUDE_ROUTING.review, "claude-sonnet-4-6");
+    assert.equal(CLAUDE_ROUTING.test, "claude-haiku-4-5");
   });
-  it("purposeResolver：用节点 purpose；无 purpose 按 kind 兜底", () => {
-    const r = purposeResolver(MODEL_POOL);
-    assert.equal(r({ id: "x", kind: "producer", purpose: "plan" }).id, "claude-opus-4-8");
-    assert.equal(r({ id: "y", kind: "producer" }).id, "composer-2.5");
-    assert.equal(r({ id: "z", kind: "evaluator" }).id, "claude-sonnet-4-6");
+  it("routingFor 按 provider 选表", () => {
+    assert.equal(routingFor("cursor"), CURSOR_ROUTING);
+    assert.equal(routingFor("claude-agent"), CLAUDE_ROUTING);
   });
-  it("routingScheme 给出完整方案", () => {
-    const s = routingScheme(MODEL_POOL);
-    assert.equal(s.plan, "claude-opus-4-8");
-    assert.equal(s.execute, "composer-2.5");
-    assert.equal(s.review, "claude-sonnet-4-6");
-    assert.equal(s.test, "kimi-k2.5");
+  it("resolverFor：用节点 purpose；无 purpose 评审→review、其余→execute", () => {
+    const rc = resolverFor("cursor");
+    assert.equal(rc({ id: "x", kind: "producer", purpose: "plan" }).id, "claude-opus-4-8");
+    assert.equal(rc({ id: "y", kind: "producer" }).id, "composer-2.5");
+    assert.equal(rc({ id: "z", kind: "evaluator" }).id, "claude-sonnet-4-6");
+    const ra = resolverFor("claude-agent");
+    assert.equal(ra({ id: "x", kind: "producer", purpose: "execute" }).id, "claude-haiku-4-5");
+    assert.equal(ra({ id: "z", kind: "evaluator" }).id, "claude-sonnet-4-6");
+  });
+  it("routingScheme(provider) 给出该 provider 的完整方案", () => {
+    assert.equal(routingScheme("cursor").execute, "composer-2.5");
+    assert.equal(routingScheme("claude-agent").execute, "claude-haiku-4-5");
   });
 });

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { runPipeline } from "./pipeline.js";
 import { makeMockSender } from "./mock.js";
 import { persistHook } from "./hooks.js";
-import { MODEL_POOL } from "./nodes/router.js";
 import type { NodeRunRecord, NodeRunStore } from "./node.js";
 
 describe("runPipeline 集成（mock sender）", () => {
@@ -12,7 +11,7 @@ describe("runPipeline 集成（mock sender）", () => {
     const mock = makeMockSender();
     const r = await runPipeline(
       { requirement: "评估权限系统", goal: "推进" },
-      { send: mock, summarize: mock, catalog: MODEL_POOL, onEvent: (e, d) => events.push([e, d]) },
+      { send: mock, summarize: mock, providerId: "cursor", onEvent: (e, d) => events.push([e, d]) },
     );
 
     // 拆解收敛、N≥3、每个 ≤5 工时
@@ -58,7 +57,7 @@ describe("runPipeline 集成（mock sender）", () => {
     const mock = makeMockSender();
     const r = await runPipeline(
       { requirement: "x", goal: "y" },
-      { send: mock, summarize: mock, catalog: MODEL_POOL, hooks: [persistHook(store)] },
+      { send: mock, summarize: mock, providerId: "cursor", hooks: [persistHook(store)] },
     );
     // 难度1 + 出方案1 + 拆解轮×2 + Σ开发轮×2
     const expected = 2 + r.decompose.iterations * 2 + r.todos.reduce((a, t) => a + t.iterations * 2, 0);

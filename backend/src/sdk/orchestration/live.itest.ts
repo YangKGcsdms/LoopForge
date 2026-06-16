@@ -10,6 +10,7 @@ import { difficultyAssessor } from "./nodes/router.js";
 import { decomposeNode } from "./nodes/decompose.js";
 import type { NodeTemplate } from "./node.js";
 import { getApiKey } from "../../config/store.js";
+import { ClaudeAgentProvider } from "../claude/claudeProvider.js";
 
 /**
  * 真实 SDK 集成测试 —— 真的调 Cursor、真的烧 token。
@@ -19,17 +20,6 @@ import { getApiKey } from "../../config/store.js";
 const KIMI = { id: "kimi-k2.5" };
 let sender: Sender;
 let cwd = "";
-
-before(async () => {
-  const apiKey = await getApiKey("cursor");
-  if (!apiKey) throw new Error("未配置 SK：先在 SK 配置页填入 Cursor API Key 再跑真实集成测试。");
-  cwd = mkdtempSync(join(tmpdir(), "cursor-itest-"));
-  sender = cursorSender(apiKey, { defaultCwd: cwd });
-});
-
-after(() => {
-  if (cwd) rmSync(cwd, { recursive: true, force: true });
-});
 
 interface Greet {
   greeting: string;
@@ -54,6 +44,16 @@ const greetNode: NodeTemplate<{ name: string }, Greet> = {
 };
 
 describe("真实 SDK 集成（kimi-k2.5）", () => {
+  before(async () => {
+    const apiKey = await getApiKey("cursor");
+    if (!apiKey) throw new Error("未配置 Cursor SK：先在 SK 配置页填入 Cursor API Key 再跑这组测试。");
+    cwd = mkdtempSync(join(tmpdir(), "cursor-itest-"));
+    sender = cursorSender(apiKey, { defaultCwd: cwd });
+  });
+  after(() => {
+    if (cwd) rmSync(cwd, { recursive: true, force: true });
+  });
+
   it("runNode + 契约：真实模型产出通过 contract 校验，且模型确为 kimi", async () => {
     const r = await runNode(greetNode, { name: "Carter" }, { workspace: { cwd } }, {
       send: sender,
@@ -82,5 +82,13 @@ describe("真实 SDK 集成（kimi-k2.5）", () => {
     assert.equal(r.status, "ok", `期望 ok，实际 ${r.status}｜error=${r.error}｜raw=${r.raw?.slice(0, 300)}`);
     assert.ok(Array.isArray(r.output?.subtasks));
     assert.ok((r.output?.subtasks.length ?? 0) > 0);
+  });
+});
+
+describe("真实 Claude 登录态", () => {
+  it("validateCredential 不填 key → 探测到本机 Claude Code 登录态可用", async () => {
+    const r = await new ClaudeAgentProvider().validateCredential("");
+    assert.equal(r.valid, true, r.detail);
+    assert.match(r.detail, /登录态|模型|可用/);
   });
 });

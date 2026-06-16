@@ -39,9 +39,9 @@ export function availablePool(liveIds: Set<string> | null, pool: CatalogModel[] 
  * 这是 `--model` 接受的写法，且"取最新版"、不随日期版本变；不是 Cursor 目录里的 claude-opus-4-8。
  */
 export const CLAUDE_POOL: CatalogModel[] = [
-  { id: "haiku", displayName: "Claude Haiku 4.5", tier: "cheap" },
-  { id: "sonnet", displayName: "Claude Sonnet 4.6", tier: "mid" },
-  { id: "opus", displayName: "Claude Opus 4.8", tier: "strong" },
+  { id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", tier: "cheap" },
+  { id: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", tier: "mid" },
+  { id: "claude-opus-4-8", displayName: "Claude Opus 4.8", tier: "strong" },
 ];
 
 /** 按 provider 选路由池。purposeModel 的退档逻辑会自动把 Cursor 专属 id 退到同档 Claude 模型。 */
@@ -80,38 +80,48 @@ export function modelResolver(difficulty: Difficulty, models: CatalogModel[]) {
 }
 
 /**
- * 按用途路由的偏好：每个 purpose 的首选模型 + 退档。
- * 出方案/把控用强模型(opus)，执行/校验最便宜(composer)，评审用中(sonnet)，测试用 kimi。
+ * 两套独立的路由策略 —— 各 provider 一张「用途 → 模型」表，用各自 SDK 的真实模型名，互不收敛。
+ * 选 cursor 走 CURSOR_ROUTING，选 claude-agent 走 CLAUDE_ROUTING，是两套策略。
  */
-const PURPOSE_PREF: Record<NodePurpose, { model: string; tier: ModelTier }> = {
-  plan: { model: "claude-opus-4-8", tier: "strong" },
-  control: { model: "claude-opus-4-8", tier: "strong" },
-  execute: { model: "composer-2.5", tier: "cheap" },
-  validate: { model: "composer-2.5", tier: "cheap" },
-  review: { model: "claude-sonnet-4-6", tier: "mid" },
-  test: { model: "kimi-k2.5", tier: "cheap" },
+export const CURSOR_ROUTING: Record<NodePurpose, string> = {
+  plan: "claude-opus-4-8",
+  control: "claude-opus-4-8",
+  execute: "composer-2.5",
+  validate: "composer-2.5",
+  review: "claude-sonnet-4-6",
+  test: "kimi-k2.5",
 };
 
-/** 用途 → 模型：首选模型在池内则用它，否则退到同档，再退 cheap，最后 auto。 */
-export function purposeModel(purpose: NodePurpose, pool: CatalogModel[]): ModelRef {
-  const pref = PURPOSE_PREF[purpose];
-  if (pool.some((m) => m.id === pref.model)) return { id: pref.model };
-  const sameTier = pool.find((m) => m.tier === pref.tier);
-  if (sameTier) return { id: sameTier.id };
-  const cheap = pool.find((m) => m.tier === "cheap");
-  return cheap ? { id: cheap.id } : { id: "auto" };
+export const CLAUDE_ROUTING: Record<NodePurpose, string> = {
+  plan: "claude-opus-4-8",
+  control: "claude-opus-4-8",
+  execute: "claude-haiku-4-5",
+  validate: "claude-haiku-4-5",
+  review: "claude-sonnet-4-6",
+  test: "claude-haiku-4-5",
+};
+
+/** 按 provider 选路由策略。 */
+export function routingFor(providerId: string): Record<NodePurpose, string> {
+  return providerId === "claude-agent" ? CLAUDE_ROUTING : CURSOR_ROUTING;
 }
 
-/** 按节点用途路由的 resolveModel。无 purpose 的节点：评审类按 review，其余按 execute。 */
-export function purposeResolver(pool: CatalogModel[]) {
-  return (info: { id: string; kind: NodeKind; purpose?: NodePurpose }): ModelRef =>
-    purposeModel(info.purpose ?? (info.kind === "evaluator" ? "review" : "execute"), pool);
+/** 无 purpose 的节点：评审类按 review，其余按 execute。 */
+function defaultPurpose(kind: NodeKind): NodePurpose {
+  return kind === "evaluator" ? "review" : "execute";
 }
 
-/** 当前池下的完整路由方案（purpose → 实际模型 id），供前端展示。 */
-export function routingScheme(pool: CatalogModel[]): Record<NodePurpose, string> {
-  const purposes: NodePurpose[] = ["plan", "control", "execute", "validate", "review", "test"];
-  return Object.fromEntries(purposes.map((p) => [p, purposeModel(p, pool).id])) as Record<NodePurpose, string>;
+/** 按 provider 的路由策略产出 resolveModel。 */
+export function resolverFor(providerId: string) {
+  const map = routingFor(providerId);
+  return (info: { id: string; kind: NodeKind; purpose?: NodePurpose }): ModelRef => ({
+    id: map[info.purpose ?? defaultPurpose(info.kind)],
+  });
+}
+
+/** 该 provider 的完整路由方案（purpose → 模型 id），供前端展示。 */
+export function routingScheme(providerId: string): Record<NodePurpose, string> {
+  return routingFor(providerId);
 }
 
 export interface DifficultyInput {

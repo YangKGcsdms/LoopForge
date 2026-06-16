@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SdkProvider } from "../provider.js";
 import type {
   AgentSendOptions,
@@ -33,9 +36,9 @@ async function loadClaudeSdk(): Promise<LoadResult> {
 
 /** Agent SDK 没有 models.list；列出 Claude Code 的模型别名（与路由池一致）。 */
 const CLAUDE_MODELS: SdkModelInfo[] = [
-  { id: "opus", displayName: "Claude Opus 4.8" },
-  { id: "sonnet", displayName: "Claude Sonnet 4.6" },
-  { id: "haiku", displayName: "Claude Haiku 4.5" },
+  { id: "claude-opus-4-8", displayName: "Claude Opus 4.8" },
+  { id: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
+  { id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5" },
 ];
 
 export class ClaudeAgentProvider implements SdkProvider {
@@ -46,13 +49,34 @@ export class ClaudeAgentProvider implements SdkProvider {
   async validateCredential(apiKey: string): Promise<ValidateResult> {
     const loaded = await loadClaudeSdk();
     if (!loaded.ok) return { valid: false, detail: loaded.reason };
-    // 不实际探测（避免计费）：装好即视为就绪，key 在首次运行时真正验证。
-    return {
-      valid: true,
-      detail: apiKey
-        ? "Claude Agent SDK 就绪（API key 将在运行时验证）。"
-        : "Claude Agent SDK 就绪（未填 key，将用本机 Claude Code 登录态）。",
-    };
+    // 真探测：发一个极小请求，在 system init（带 model）处即返回 → 确认认证可用（含本机登录态）。
+    const prev = process.env.ANTHROPIC_API_KEY;
+    if (apiKey) process.env.ANTHROPIC_API_KEY = apiKey;
+    const cwd = mkdtempSync(join(tmpdir(), "lf-claude-validate-"));
+    try {
+      let model: string | undefined;
+      for await (const message of loaded.sdk.query({ prompt: "ok", options: { cwd, permissionMode: "plan", maxTurns: 1 } })) {
+        const m = message as { model?: string };
+        if (typeof m.model === "string") {
+          model = m.model;
+          break; // 拿到 model 即认证成功，无需等生成
+        }
+      }
+      return {
+        valid: true,
+        detail: apiKey
+          ? `API key 可用${model ? `（模型 ${model}）` : ""}。`
+          : `本机 Claude Code 登录态可用${model ? `（模型 ${model}）` : ""}。`,
+      };
+    } catch (err) {
+      return { valid: false, detail: `认证失败：${err instanceof Error ? err.message : String(err)}` };
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      if (apiKey) {
+        if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+        else process.env.ANTHROPIC_API_KEY = prev;
+      }
+    }
   }
 
   async listModels(_apiKey: string): Promise<SdkModelInfo[]> {

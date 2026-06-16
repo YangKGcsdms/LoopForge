@@ -7,9 +7,8 @@ import { runNode, type Sender } from "./run.js";
 import { runLoop, type LoopSpec } from "./loop.js";
 import {
   difficultyAssessor,
-  purposeResolver,
+  resolverFor,
   routingScheme,
-  type CatalogModel,
   type Difficulty,
 } from "./nodes/router.js";
 import { planNode, type PlanOutput } from "./nodes/plan.js";
@@ -70,7 +69,8 @@ export interface PipelineInput {
 export interface PipelineDeps {
   send: Sender;
   summarize?: Sender;
-  catalog: CatalogModel[];
+  /** 选哪套路由策略：cursor / claude-agent。 */
+  providerId: string;
   workspace?: Workspace;
   hooks?: NodeHook[];
   /** 流式事件回调（phase / difficulty / todos / done）。 */
@@ -95,7 +95,7 @@ export interface PipelineResult {
 }
 
 export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Promise<PipelineResult> {
-  const { send, summarize, catalog, workspace, hooks = [], onEvent } = deps;
+  const { send, summarize, providerId, workspace, hooks = [], onEvent } = deps;
   const emit = (event: string, data: unknown) => onEvent?.(event, data);
 
   // 1) 前置难度评估
@@ -107,8 +107,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
     { send, hooks },
   );
   const difficulty: Difficulty = assess.output?.difficulty ?? "medium";
-  const resolver = purposeResolver(catalog);
-  const routing = routingScheme(catalog);
+  const resolver = resolverFor(providerId);
+  const routing = routingScheme(providerId);
   emit("difficulty", { value: difficulty, reason: assess.output?.reason ?? null });
   emit("routing", routing);
 

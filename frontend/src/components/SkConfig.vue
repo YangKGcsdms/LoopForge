@@ -17,6 +17,18 @@ const tone = ref<Tone>("idle");
 const supportedProviders = computed(() => providers.value.filter((p) => p.supported));
 const unsupportedProviders = computed(() => providers.value.filter((p) => !p.supported));
 
+const isClaude = computed(() => selectedProvider.value === "claude-agent");
+const keyPlaceholder = computed(() =>
+  isClaude.value
+    ? "可留空（用本机 Claude Code 登录态），或粘贴 Anthropic API Key"
+    : "粘贴你的 Cursor API Key（CURSOR_API_KEY）",
+);
+const providerHint = computed(() =>
+  isClaude.value
+    ? "Claude Agent SDK：SK 可留空，运行时用本机 Claude Code 登录态（订阅）。点「验证连接」会真去探测登录态。"
+    : "Cursor SDK：需填 Cursor API Key（Dashboard 生成）。",
+);
+
 const messageClass = computed(() => {
   switch (tone.value) {
     case "ok":
@@ -131,9 +143,9 @@ onMounted(async () => {
           {{ p.displayName }} —— {{ p.note ?? "暂不支持" }}
         </option>
       </select>
-      <p class="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
-        <span class="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-        目前仅支持 Cursor SDK，其他 Provider 敬请期待。
+      <p class="mt-2 flex items-start gap-1.5 text-xs text-amber-600">
+        <span class="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"></span>
+        {{ providerHint }}
       </p>
     </div>
 
@@ -160,7 +172,7 @@ onMounted(async () => {
         <input
           v-model="apiKey"
           :type="showKey ? 'text' : 'password'"
-          placeholder="粘贴你的 Cursor API Key（CURSOR_API_KEY）"
+          :placeholder="keyPlaceholder"
           autocomplete="off"
           class="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
         />

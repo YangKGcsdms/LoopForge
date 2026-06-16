@@ -51,10 +51,8 @@ configRouter.post("/sk/validate", async (req, res) => {
   if (!impl) {
     return res.status(400).json({ error: "unsupported_provider", provider });
   }
-  const keyToCheck = typeof apiKey === "string" && apiKey.trim() ? apiKey.trim() : await getApiKey(provider);
-  if (!keyToCheck) {
-    return res.status(400).json({ error: "no_api_key", detail: "未提供也未保存 SK。" });
-  }
+  // 不因"空 key"直接拒绝：交给 provider 判断（如 claude-agent 可用本机 Claude Code 登录态）。
+  const keyToCheck = typeof apiKey === "string" && apiKey.trim() ? apiKey.trim() : (await getApiKey(provider)) ?? "";
   const result = await impl.validateCredential(keyToCheck);
   res.json({ provider, ...result });
 });

@@ -1,13 +1,9 @@
 import { Router } from "express";
 import { getApiKey } from "../config/store.js";
-import { getProvider } from "../sdk/index.js";
 import {
   runPipeline,
   makeMockSender,
   senderFor,
-  poolFor,
-  availablePool,
-  type CatalogModel,
   type NodeHook,
   type Sender,
   type Workspace,
@@ -15,28 +11,16 @@ import {
 
 export const runRouter = Router();
 
-type Deps = { sender: Sender; catalog: CatalogModel[] };
+type Deps = { sender: Sender };
 
-/** 装配 sender + 模型目录：dryRun 用 mock；否则用已配置 SK 的真实 Cursor。 */
+/** 装配 sender：dryRun 用 mock；否则按 provider 用 SK（claude-agent 可空，走登录态）。路由策略由 provider 决定。 */
 async function resolveDeps(dryRun: boolean, provider: string, cwd?: string): Promise<Deps | { error: string }> {
-  const pool = poolFor(provider);
-  if (dryRun) return { sender: makeMockSender(), catalog: pool };
+  if (dryRun) return { sender: makeMockSender() };
   const apiKey = await getApiKey(provider);
-  // cursor 必须有 key；claude-agent 可留空（用本机 Claude Code 登录态）。
   if (!apiKey && provider !== "claude-agent") {
     return { error: "未配置 SK，请用 dryRun 或先在 SK 配置页填入。" };
   }
-  const sender = senderFor(provider, apiKey ?? "", { defaultCwd: cwd });
-  let liveIds: Set<string> | null = null;
-  const impl = getProvider(provider);
-  if (impl && apiKey) {
-    try {
-      liveIds = new Set((await impl.listModels(apiKey)).map((m) => m.id));
-    } catch {
-      liveIds = null;
-    }
-  }
-  return { sender, catalog: availablePool(liveIds, pool) };
+  return { sender: senderFor(provider, apiKey ?? "", { defaultCwd: cwd }) };
 }
 
 function parseBody(body: unknown) {
@@ -58,7 +42,7 @@ runRouter.post("/pipeline", async (req, res) => {
   const result = await runPipeline({ requirement, goal }, {
     send: d.sender,
     summarize: d.sender,
-    catalog: d.catalog,
+    providerId: provider,
     workspace,
   });
   res.json({ dryRun, ...result });
@@ -112,7 +96,7 @@ runRouter.get("/pipeline/stream", async (req, res) => {
     await runPipeline({ requirement, goal }, {
       send: d.sender,
       summarize: d.sender,
-      catalog: d.catalog,
+      providerId: provider,
       workspace,
       hooks: [streamHook],
       onEvent: send,
