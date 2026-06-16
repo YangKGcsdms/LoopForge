@@ -10,6 +10,7 @@ import {
   resolverFor,
   routingScheme,
   poolFor,
+  difficultyAssessor,
   MODEL_POOL,
   CLAUDE_POOL,
   CURSOR_ROUTING,
@@ -133,5 +134,8 @@ describe("两套独立路由策略（不收敛，各用各的模型名）", () =
   it("routingScheme(provider) 给出该 provider 的完整方案", () => {
     assert.equal(routingScheme("cursor").execute, "composer-2.5");
     assert.equal(routingScheme("claude-agent").execute, "claude-haiku-4-5");
+  });
+  it("难度评估节点不写死 provider 专属模型（交给路由，避免对 Claude 用了 composer）", () => {
+    assert.equal(difficultyAssessor.model, undefined);
   });
 });

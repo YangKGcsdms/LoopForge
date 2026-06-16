@@ -34,6 +34,7 @@ type LiveItem = NodeItem | PhaseItem | TodosItem;
 const models = ref<CatalogModel[]>([]);
 const modelSource = ref("");
 const modelNote = ref("");
+const poolRouting = ref<Record<string, string> | null>(null);
 
 const provider = ref("cursor");
 const requirement = ref("检查当前项目新版本的 oa-system-ui 前台权限系统");
@@ -175,6 +176,7 @@ async function loadModels() {
     models.value = res.models;
     modelSource.value = res.source;
     modelNote.value = res.note ?? "";
+    poolRouting.value = res.routing ?? null;
   } catch (e) {
     error.value = `加载模型失败：${(e as Error).message}`;
   }
@@ -186,14 +188,34 @@ onUnmounted(cleanup);
 
 <template>
   <div class="space-y-6">
-    <!-- 模型目录 -->
+    <!-- 路由池：跟随所选引擎（两套策略各一套） -->
     <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-lg font-semibold">路由池（按难度选模型）</h2>
-        <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-          {{ modelSource === "live" ? "实时可用性" : "可用性未知" }}
-        </span>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-lg font-semibold">
+          路由池 · {{ provider === "cursor" ? "Cursor SDK" : "Claude Agent SDK" }}
+        </h2>
+        <div class="flex items-center gap-2">
+          <select
+            v-model="provider"
+            class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            @change="loadModels"
+          >
+            <option value="cursor">Cursor SDK</option>
+            <option value="claude-agent">Claude Agent SDK</option>
+          </select>
+          <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            {{ modelSource === "live" ? "实时可用性" : "可用性未知" }}
+          </span>
+        </div>
       </div>
+
+      <div v-if="poolRouting" class="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+        <span>出方案 <span class="font-mono text-slate-700">{{ poolRouting.plan }}</span></span>
+        <span>执行 <span class="font-mono text-slate-700">{{ poolRouting.execute }}</span></span>
+        <span>评审 <span class="font-mono text-slate-700">{{ poolRouting.review }}</span></span>
+        <span>测试 <span class="font-mono text-slate-700">{{ poolRouting.test }}</span></span>
+      </div>
+
       <div class="flex flex-wrap gap-2">
         <span
           v-for="m in models"
@@ -207,7 +229,7 @@ onUnmounted(cleanup);
         </span>
       </div>
       <p class="mt-2 text-xs text-slate-400">
-        按难度路由：easy→cheap、medium→mid、hard/评审→strong；某档全不可用时回退 auto。
+        按用途路由，Cursor 与 Claude 各一套、互不相同；切上方引擎即换池与策略。
         <span v-if="modelNote"> · {{ modelNote }}</span>
       </p>
     </section>
@@ -218,16 +240,6 @@ onUnmounted(cleanup);
       <p class="mb-5 text-sm text-slate-500">
         难度评估 → 出方案 → 拆解成 N 个 3~5 工时任务 → 每个 TODO 自循环开发（开发→评审→矫正→通过）。
       </p>
-
-      <label class="mb-1.5 block text-sm font-medium text-slate-700">引擎 Provider</label>
-      <select
-        v-model="provider"
-        class="mb-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-        @change="loadModels"
-      >
-        <option value="cursor">Cursor SDK</option>
-        <option value="claude-agent">Claude Agent SDK</option>
-      </select>
 
       <label class="mb-1.5 block text-sm font-medium text-slate-700">需求</label>
       <textarea

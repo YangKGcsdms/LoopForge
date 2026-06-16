@@ -98,17 +98,19 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   const { send, summarize, providerId, workspace, hooks = [], onEvent } = deps;
   const emit = (event: string, data: unknown) => onEvent?.(event, data);
 
+  // 路由策略先定好（按 provider），难度评估节点也要按它路由模型，否则会用错 provider 的模型。
+  const resolver = resolverFor(providerId);
+  const routing = routingScheme(providerId);
+
   // 1) 前置难度评估
   emit("phase", { name: "难度评估" });
   const assess = await runNode(
     difficultyAssessor,
     { task: input.requirement, goal: input.goal },
     { workspace },
-    { send, hooks },
+    { send, hooks, resolveModel: resolver },
   );
   const difficulty: Difficulty = assess.output?.difficulty ?? "medium";
-  const resolver = resolverFor(providerId);
-  const routing = routingScheme(providerId);
   emit("difficulty", { value: difficulty, reason: assess.output?.reason ?? null });
   emit("routing", routing);
 

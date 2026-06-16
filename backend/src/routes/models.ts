@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getProvider } from "../sdk/index.js";
 import { getApiKey } from "../config/store.js";
-import { poolFor } from "../sdk/orchestration/index.js";
+import { poolFor, routingScheme } from "../sdk/orchestration/index.js";
 
 export const modelsRouter = Router();
 
@@ -27,5 +27,5 @@ modelsRouter.get("/", async (req, res) => {
     note = "未配置 SK，可用性未知";
   }
   const models = poolFor(provider).map((m) => ({ ...m, available: liveIds ? liveIds.has(m.id) : null }));
-  res.json({ source: liveIds ? "live" : "fallback", provider, models, note });
+  res.json({ source: liveIds ? "live" : "fallback", provider, models, routing: routingScheme(provider), note });
 });

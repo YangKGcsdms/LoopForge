@@ -32,7 +32,9 @@ export interface CatalogModel {
 
 export interface ModelsResponse {
   source: "live" | "fallback";
+  provider?: string;
   models: CatalogModel[];
+  routing?: Record<string, string>;
   note?: string;
 }
 

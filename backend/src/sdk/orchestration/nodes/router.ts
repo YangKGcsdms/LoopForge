@@ -154,7 +154,6 @@ export const difficultyAssessor: NodeTemplate<DifficultyInput, DifficultyOutput>
   purpose: "validate",
   role: "你是技术评估员，做开发任务的难度评估。",
   output: difficultyContract,
-  model: { id: "composer-2.5" },
   render(input, _ctx) {
     return {
       static:
