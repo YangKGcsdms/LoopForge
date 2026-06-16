@@ -1,12 +1,29 @@
 import { Router } from "express";
 import { getProvider, listProviderInfos } from "../sdk/index.js";
 import { deleteApiKey, getApiKey, getStatus, setApiKey } from "../config/store.js";
+import { getPreferences, setPreferences } from "../config/prefs.js";
 
 export const configRouter = Router();
 
 /** Provider 列表（前端「SK 配置」下拉用）。目前仅 cursor 为 supported。 */
 configRouter.get("/providers", (_req, res) => {
   res.json({ providers: listProviderInfos() });
+});
+
+/** 读取用户偏好（含所选 Provider）。 */
+configRouter.get("/preferences", async (_req, res) => {
+  res.json(await getPreferences());
+});
+
+/** 更新用户偏好（目前仅 provider）。落库持久化。 */
+configRouter.put("/preferences", async (req, res) => {
+  const { provider } = req.body ?? {};
+  if (provider !== undefined) {
+    if (typeof provider !== "string" || !getProvider(provider)) {
+      return res.status(400).json({ error: "unsupported_provider", provider });
+    }
+  }
+  res.json(await setPreferences(provider !== undefined ? { provider } : {}));
 });
 
 /** 读取某 Provider 的 SK 配置状态（脱敏）。 */

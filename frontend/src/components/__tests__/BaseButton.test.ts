@@ -14,9 +14,9 @@ describe("BaseButton", () => {
       props: { variant: "primary" },
     });
     const classes = wrapper.attributes("class");
-    assert.match(classes, /bg-slate-900/, "should have bg-slate-900 for primary");
-    assert.match(classes, /text-white/, "should have text-white");
-    assert.match(classes, /hover:bg-slate-700/, "should have hover:bg-slate-700");
+    assert.match(classes, /bg-violet-600/, "should have bg-violet-600 (terracotta) for primary");
+    assert.match(classes, /text-slate-50/, "should have text-slate-50");
+    assert.match(classes, /hover:bg-violet-700/, "should have hover:bg-violet-700");
   });
 
   it("renders with secondary variant classes", () => {

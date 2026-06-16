@@ -24,8 +24,8 @@ describe("StatusBadge", () => {
 
         switch (status) {
           case "running":
-            assert.match(classes, /bg-sky-100/, "should have sky background");
-            assert.match(classes, /text-sky-700/, "should have sky text");
+            assert.match(classes, /bg-violet-100/, "should have brand (terracotta) background");
+            assert.match(classes, /text-violet-700/, "should have brand text");
             break;
           case "completed":
             assert.match(classes, /bg-emerald-100/, "should have emerald background");

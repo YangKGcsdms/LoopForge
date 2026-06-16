@@ -30,12 +30,12 @@ const props = withDefaults(defineProps<Props>(), {
 
 // 标题层级到 Tailwind 类的映射
 const levelClasses = {
-  h1: "text-4xl font-bold leading-tight",
-  h2: "text-3xl font-semibold",
-  h3: "text-2xl font-semibold",
-  h4: "text-xl font-semibold",
-  h5: "text-lg font-medium",
-  h6: "text-base font-medium",
+  h1: "font-serif text-4xl font-normal leading-tight tracking-tight",
+  h2: "font-serif text-2xl font-normal tracking-tight",
+  h3: "font-serif text-xl font-normal tracking-tight",
+  h4: "text-lg font-semibold",
+  h5: "text-base font-medium",
+  h6: "text-sm font-medium",
 };
 
 // 标题容器间距

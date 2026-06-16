@@ -1,48 +1,59 @@
 <script setup lang="ts">
-import { onUnmounted } from "vue";
+import { onUnmounted, ref } from "vue";
+import AppHeader from "./components/AppHeader.vue";
+import BottomNav, { type TabKey } from "./components/BottomNav.vue";
 import SkConfig from "./components/SkConfig.vue";
+import RoutePool from "./components/RoutePool.vue";
 import WorkflowForm from "./components/WorkflowForm.vue";
 import WorkflowResults from "./components/WorkflowResults.vue";
+import AboutView from "./components/AboutView.vue";
 import { useRun } from "./composables/useRun";
+import { useProvider } from "./composables/useProvider";
 
+// 单例运行状态：跨 Tab 保持 SSE 流不中断
 const runState = useRun();
+// 全局所选引擎（落库持久化），路由卡片随之跟随
+const { provider, load: loadProvider } = useProvider();
+void loadProvider();
+const activeTab = ref<TabKey>("run");
 
+const tabTitle: Record<TabKey, string> = {
+  run: "运行",
+  config: "配置",
+  about: "关于",
+};
+
+// 切到运行 Tab 时若正在运行，自动回到运行页便于观察（保持当前即可）
 onUnmounted(runState.cleanup);
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50 text-slate-800">
-    <header class="border-b border-slate-200 bg-white">
-      <div class="flex items-center gap-3 px-6 py-4">
-        <div class="flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-sm font-bold text-white">
-          L
-        </div>
-        <div class="flex-1">
-          <h1 class="text-base font-semibold leading-tight text-slate-900">LoopForge</h1>
-          <p class="text-xs text-slate-600">Cursor / Claude · 节点/Loop 自驱编排</p>
-        </div>
-      </div>
-    </header>
+  <div class="page text-slate-800">
+    <AppHeader
+      :title="tabTitle[activeTab]"
+      :running="runState.running.value"
+      :has-error="!!runState.error.value"
+    />
 
-    <!-- 两栏响应式网格布局：lg+ 两栏，md- 单列堆叠 -->
-    <main class="grid min-h-[calc(100vh-72px)] auto-rows-max gap-6 px-4 py-6 md:px-6 md:py-8 lg:auto-rows-[1fr] lg:gap-6 lg:grid-cols-[420px_1fr] lg:px-6 lg:py-10">
-      <!-- 左栏：配置与表单区（约 420px，小屏幕时单列） -->
-      <div class="overflow-y-auto lg:min-h-[calc(100vh-72px)]">
-        <div class="space-y-6 pr-0 md:pr-2">
-          <!-- SK 配置 -->
-          <SkConfig />
-
-          <!-- 运行表单 -->
-          <WorkflowForm :use-run-state="runState" />
-        </div>
-      </div>
-
-      <!-- 右栏：结果区（flex-1，小屏幕时单列） -->
-      <div class="overflow-y-auto lg:min-h-[calc(100vh-72px)]">
-        <div class="pr-0 md:pr-2">
-          <WorkflowResults :use-run-state="runState" />
-        </div>
+    <!-- 运行 Tab -->
+    <main v-show="activeTab === 'run'" class="px-4 py-5">
+      <WorkflowForm :use-run-state="runState" @go-config="activeTab = 'config'" />
+      <div class="mt-6">
+        <WorkflowResults :use-run-state="runState" />
       </div>
     </main>
+
+    <!-- 配置 Tab：引擎选择 + SK 配置 + 路由卡片（跟随所选引擎） -->
+    <main v-show="activeTab === 'config'" class="space-y-6 px-4 py-5">
+      <SkConfig />
+      <RoutePool :provider="provider" />
+    </main>
+
+    <!-- 关于 Tab -->
+    <main v-show="activeTab === 'about'">
+      <AboutView />
+    </main>
+
+    <BottomNav v-model="activeTab" />
   </div>
 </template>

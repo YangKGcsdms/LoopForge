@@ -26,9 +26,9 @@ const computedClass = computed(() => [
   props.size === 'md' && 'p-6',
   props.size === 'lg' && 'p-8 rounded-xl',
   // Style variants
-  props.variant === 'default' && 'bg-white border-slate-200 shadow-sm',
-  props.variant === 'elevated' && 'bg-white border-slate-200 shadow-lg',
-  props.variant === 'outlined' && 'bg-white border-2',
+  props.variant === 'default' && 'bg-slate-50 border-slate-200',
+  props.variant === 'elevated' && 'bg-slate-50 border-slate-200 shadow-md',
+  props.variant === 'outlined' && 'bg-slate-50 border-2',
   // Tone variants
   props.tone === 'neutral' && (
     props.variant === 'outlined'

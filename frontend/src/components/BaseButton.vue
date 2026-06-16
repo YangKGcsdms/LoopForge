@@ -39,8 +39,8 @@ const emit = defineEmits<{
       size === 'md' && 'px-4 py-2 text-sm rounded-lg',
       size === 'lg' && 'px-6 py-3 text-base rounded-lg',
       // Color variants
-      variant === 'primary' && 'bg-slate-900 text-white hover:bg-slate-700 focus:ring-violet-500',
-      variant === 'secondary' && 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 focus:ring-violet-500',
+      variant === 'primary' && 'bg-violet-600 text-slate-50 hover:bg-violet-700 focus:ring-violet-500',
+      variant === 'secondary' && 'border border-slate-300 bg-slate-50 text-slate-900 hover:bg-slate-100 focus:ring-violet-500',
       variant === 'danger' && 'border border-rose-300 text-rose-700 hover:bg-rose-50 focus:ring-rose-500',
       variant === 'ghost' && 'text-slate-700 hover:bg-slate-100 focus:ring-violet-500',
     ]"

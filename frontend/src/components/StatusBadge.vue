@@ -21,10 +21,10 @@ const props = withDefaults(defineProps<Props>(), {
 
 const statusConfig = {
   running: {
-    bg: "bg-sky-100",
-    text: "text-sky-800",
-    border: "border-sky-300",
-    dot: "bg-sky-600",
+    bg: "bg-violet-100",
+    text: "text-violet-700",
+    border: "border-violet-200",
+    dot: "bg-violet-600",
     label: "运行中",
   },
   completed: {

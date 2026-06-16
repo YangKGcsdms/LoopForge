@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { api, type ProviderInfo, type SkStatus } from "../api/client";
+import { useProvider } from "../composables/useProvider";
 import BaseButton from "./BaseButton.vue";
 import BaseInput from "./BaseInput.vue";
 import BaseCard from "./BaseCard.vue";
@@ -9,7 +10,8 @@ import BaseSelect from "./BaseSelect.vue";
 type Tone = "idle" | "ok" | "error" | "info";
 
 const providers = ref<ProviderInfo[]>([]);
-const selectedProvider = ref("cursor");
+// 所选引擎来自全局共享状态（落库持久化），运行页与配置页同步
+const { provider: selectedProvider, load: loadProvider } = useProvider();
 const apiKey = ref("");
 const showKey = ref(false);
 const status = ref<SkStatus | null>(null);
@@ -119,7 +121,19 @@ async function clear() {
   }
 }
 
+// 切换引擎：落库持久化 + 刷新该引擎的配置状态
+// （v-model 已更新共享 ref，此处直接落库）
+async function onProviderChange() {
+  try {
+    await api.savePreferences({ provider: selectedProvider.value });
+  } catch {
+    // 落库失败不阻塞切换
+  }
+  await loadStatus();
+}
+
 onMounted(async () => {
+  await loadProvider();
   await loadProviders();
   await loadStatus();
 });
@@ -128,7 +142,7 @@ onMounted(async () => {
 <template>
   <BaseCard variant="default" size="lg">
     <div class="mb-6">
-      <h2 class="text-lg font-semibold">SK 配置</h2>
+      <h2 class="font-serif text-xl font-normal tracking-tight text-slate-900">SK 配置</h2>
       <p class="mt-1 text-sm text-slate-700">配置访问密钥（Secret Key）以驱动 SDK 集成层。</p>
     </div>
 
@@ -138,7 +152,7 @@ onMounted(async () => {
       <BaseSelect
         v-model="selectedProvider"
         fullWidth
-        @change="loadStatus"
+        @change="onProviderChange"
       >
         <option v-for="p in supportedProviders" :key="p.id" :value="p.id">
           {{ p.displayName }}

@@ -25,8 +25,8 @@ export const tierColors: Record<string, SemanticColorToken> = {
     text: "text-violet-700",
   },
   mid: {
-    bg: "bg-sky-100",
-    text: "text-sky-700",
+    bg: "bg-amber-100",
+    text: "text-amber-700",
   },
   default: {
     bg: "bg-slate-100",
@@ -50,8 +50,8 @@ export const kindColors: Record<string, SemanticColorToken> = {
     text: "text-rose-700",
   },
   default: {
-    bg: "bg-sky-100",
-    text: "text-sky-700",
+    bg: "bg-slate-100",
+    text: "text-slate-600",
   },
 };
 

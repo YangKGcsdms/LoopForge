@@ -18,12 +18,12 @@ describe("Design Tokens System", () => {
 
     // 验证主色调存在
     expect(colors.slate).toBeDefined();
-    expect(colors.slate[50]).toBe("#f8fafc");
-    expect(colors.slate[900]).toBe("#0f172a");
+    expect(colors.slate[50]).toBe("#faf9f5");
+    expect(colors.slate[900]).toBe("#2a221c");
 
-    // 验证强调色存在
+    // 验证强调色存在（terracotta 陶土橙）
     expect(colors.violet).toBeDefined();
-    expect(colors.violet[600]).toBe("#9333ea");
+    expect(colors.violet[600]).toBe("#c96442");
 
     // 验证状态色存在
     expect(colors.emerald).toBeDefined(); // 成功

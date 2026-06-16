@@ -83,8 +83,20 @@ async function http<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+export interface Preferences {
+  provider: string;
+}
+
 export const api = {
   listProviders: () => http<{ providers: ProviderInfo[] }>("/api/config/providers"),
+
+  getPreferences: () => http<Preferences>("/api/config/preferences"),
+
+  savePreferences: (patch: Partial<Preferences>) =>
+    http<Preferences>("/api/config/preferences", {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }),
 
   getSkStatus: (provider: string) =>
     http<SkStatus>(`/api/config/sk?provider=${encodeURIComponent(provider)}`),
