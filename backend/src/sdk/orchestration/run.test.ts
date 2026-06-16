@@ -1,0 +1,124 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { runNode, type Sender } from "./run.js";
+import { defineContract, type ContractResult } from "./contract.js";
+import type { NodeHook, NodeRunContext, NodeTemplate } from "./node.js";
+
+interface Out {
+  v: number;
+}
+const contract = defineContract<Out>({
+  name: "out",
+  schema: "{ v: number }",
+  validate(data): ContractResult<Out> {
+    const d = data as Partial<Out>;
+    if (typeof d.v !== "number") return { ok: false, errors: ["v 必须是 number"] };
+    return { ok: true, value: data as Out };
+  },
+});
+
+const node: NodeTemplate<{ x: number }, Out> = {
+  id: "t",
+  kind: "producer",
+  role: "role",
+  output: contract,
+  render: (input) => ({ static: "s", dynamic: `x=${input.x}` }),
+};
+
+const ctx: NodeRunContext = {};
+
+/** 依次吐 results 里的字符串，最后一个用尽后重复。返回 send 与调用计数。 */
+function scripted(results: string[]) {
+  let i = 0;
+  const send: Sender = async () => {
+    const r = results[Math.min(i, results.length - 1)];
+    i++;
+    return { result: r, durationMs: 1 };
+  };
+  return { send, calls: () => i };
+}
+
+describe("runNode", () => {
+  it("一次成功：status ok，repairs 0", async () => {
+    const r = await runNode(node, { x: 1 }, ctx, { send: scripted(['{"v":1}']).send });
+    assert.equal(r.status, "ok");
+    assert.equal(r.repairs, 0);
+    assert.equal(r.output?.v, 1);
+  });
+
+  it("先坏后好：触发修复重试，repairs 1", async () => {
+    const s = scripted(["不是 JSON", '{"v":2}']);
+    const r = await runNode(node, { x: 1 }, ctx, { send: s.send });
+    assert.equal(r.status, "ok");
+    assert.equal(r.repairs, 1);
+    assert.equal(s.calls(), 2);
+  });
+
+  it("一直坏：repair_exhausted，重试到上限（默认 2）", async () => {
+    const s = scripted(["坏"]);
+    const r = await runNode(node, { x: 1 }, ctx, { send: s.send });
+    assert.equal(r.status, "repair_exhausted");
+    assert.equal(r.repairs, 2);
+    assert.equal(s.calls(), 3);
+    assert.equal(r.output, undefined);
+  });
+
+  it("maxRepairs 可配置为 0", async () => {
+    const s = scripted(["坏"]);
+    const r = await runNode({ ...node, maxRepairs: 0 }, { x: 1 }, ctx, { send: s.send });
+    assert.equal(r.status, "repair_exhausted");
+    assert.equal(s.calls(), 1);
+  });
+
+  it("sender 抛错：status error 带原因", async () => {
+    const send: Sender = async () => {
+      throw new Error("boom");
+    };
+    const r = await runNode(node, { x: 1 }, ctx, { send });
+    assert.equal(r.status, "error");
+    assert.match(r.error ?? "", /boom/);
+  });
+
+  it("钩子 onInput/onOutput 按序触发", async () => {
+    const seen: string[] = [];
+    const hook: NodeHook = {
+      name: "h",
+      onInput: (e) => {
+        seen.push("in:" + e.nodeId);
+      },
+      onOutput: (e) => {
+        seen.push("out:" + e.result.status);
+      },
+    };
+    await runNode(node, { x: 1 }, ctx, { send: scripted(['{"v":1}']).send, hooks: [hook] });
+    assert.deepEqual(seen, ["in:t", "out:ok"]);
+  });
+
+  it("resolveModel 覆盖节点模型", async () => {
+    let usedModel: unknown;
+    const send: Sender = async (req) => {
+      usedModel = req.model;
+      return { result: '{"v":1}', durationMs: 1 };
+    };
+    await runNode(node, { x: 1 }, ctx, { send, resolveModel: () => ({ id: "strong-x" }) });
+    assert.deepEqual(usedModel, { id: "strong-x" });
+  });
+
+  it("summarize 仅在成功时生成 summary", async () => {
+    const r = await runNode(node, { x: 1 }, ctx, {
+      send: scripted(['{"v":1}']).send,
+      summarize: async () => ({ result: "一句话", durationMs: 1 }),
+    });
+    assert.equal(r.summary, "一句话");
+  });
+
+  it("cwd 从 ctx.workspace 透传到 send", async () => {
+    let usedCwd: string | undefined;
+    const send: Sender = async (req) => {
+      usedCwd = req.cwd;
+      return { result: '{"v":1}', durationMs: 1 };
+    };
+    await runNode(node, { x: 1 }, { workspace: { cwd: "/tmp/x" } }, { send });
+    assert.equal(usedCwd, "/tmp/x");
+  });
+});
