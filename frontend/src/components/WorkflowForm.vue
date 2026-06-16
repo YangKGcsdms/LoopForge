@@ -7,6 +7,7 @@ import BaseButton from "./BaseButton.vue";
 import BaseInput from "./BaseInput.vue";
 import BaseCard from "./BaseCard.vue";
 import BaseSelect from "./BaseSelect.vue";
+import BaseTag from "./BaseTag.vue";
 
 interface Props {
   useRunState: UseRunState & UseRunActions;
@@ -18,6 +19,8 @@ const models = ref<CatalogModel[]>([]);
 const modelSource = ref("");
 const modelNote = ref("");
 const poolRouting = ref<Record<string, string> | null>(null);
+// 模型加载错误独立于运行错误（运行错误归 useRun.error），避免两者互相覆盖。
+const loadError = ref("");
 
 const provider = ref("cursor");
 const requirement = ref("检查当前项目新版本的 oa-system-ui 前台权限系统");
@@ -26,6 +29,7 @@ const cwd = ref("");
 const dryRun = ref(true);
 
 async function loadModels() {
+  loadError.value = "";
   try {
     const res = await api.getModels(provider.value);
     models.value = res.models;
@@ -33,7 +37,7 @@ async function loadModels() {
     modelNote.value = res.note ?? "";
     poolRouting.value = res.routing ?? null;
   } catch (e) {
-    props.useRunState.error.value = `加载模型失败：${(e as Error).message}`;
+    loadError.value = `加载模型失败：${(e as Error).message}`;
   }
 }
 
@@ -87,15 +91,16 @@ onMounted(loadModels);
           class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm"
           :class="m.available === false ? 'border-rose-200 bg-rose-50 opacity-60' : 'border-slate-200'"
         >
-          <span>{{ m.displayName }}</span>
-          <span :class="tierClass(m.tier)" class="rounded px-1.5 py-0.5 text-xs">{{ m.tier }}</span>
-          <span v-if="m.available === false" class="rounded bg-rose-100 px-1 text-xs text-rose-600">禁用</span>
+          <span class="text-slate-800">{{ m.displayName }}</span>
+          <BaseTag :color="tierClass(m.tier)">{{ m.tier }}</BaseTag>
+          <BaseTag v-if="m.available === false" color="bg-rose-100 text-rose-600">禁用</BaseTag>
         </span>
       </div>
       <p class="mt-2 text-xs text-slate-600">
         按用途路由，Cursor 与 Claude 各一套、互不相同；切上方引擎即换池与策略。
         <span v-if="modelNote"> · {{ modelNote }}</span>
       </p>
+      <p v-if="loadError" class="mt-2 text-xs text-rose-600">{{ loadError }}</p>
     </BaseCard>
 
     <!-- 运行表单 -->
@@ -109,7 +114,7 @@ onMounted(loadModels);
       <textarea
         v-model="requirement"
         rows="2"
-        class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+        class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 transition-colors duration-150 placeholder:text-slate-500 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2"
       ></textarea>
 
       <label class="mb-1.5 block text-sm font-medium text-slate-800">最终目标</label>

@@ -8,6 +8,7 @@ import {
   type Sender,
   type Workspace,
 } from "../sdk/orchestration/index.js";
+import { runtimeApprover, SAFE_TOOLS } from "../sdk/approval/index.js";
 
 export const runRouter = Router();
 
@@ -20,7 +21,14 @@ async function resolveDeps(dryRun: boolean, provider: string, cwd?: string): Pro
   if (!apiKey && provider !== "claude-agent") {
     return { error: "未配置 SK，请用 dryRun 或先在 SK 配置页填入。" };
   }
-  return { sender: senderFor(provider, apiKey ?? "", { defaultCwd: cwd }) };
+  // 真跑：安全工具(读/改文件)自动放行，Bash 等动机器的工具走审批器(飞书长连接审批)。
+  return {
+    sender: senderFor(provider, apiKey ?? "", {
+      defaultCwd: cwd,
+      allowedTools: SAFE_TOOLS,
+      approve: runtimeApprover(),
+    }),
+  };
 }
 
 function parseBody(body: unknown) {

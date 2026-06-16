@@ -19,14 +19,18 @@ const DEFAULT_HARD_NEVER: Array<string | RegExp> = [
   /chmod\s+-R\s+777\s+\//,
 ];
 
-/** 目标闸门：评审两维都达标且偏差不超阈值才放行，否则阻断/重派。 */
+/**
+ * 目标闸门：评审两维都达标且偏差不超阈值才放行，否则 reassign（带 requiredFixes 重开）。
+ * 关键：评审不通过一律走 reassign，让 loop 重新开发不对的地方——block 只留给硬红线
+ * （见 checkHardNever），否则"评审推翻了却不重试"。
+ */
 export function goalGate(verdict: EvaluatorVerdict, config: GateConfig = {}): GateDecision {
   const threshold = config.deviationThreshold ?? 0.3;
   if (!verdict.pass || verdict.deviation.score > threshold) {
     return {
-      action: verdict.deviation.score > threshold ? "reassign" : "block",
+      action: "reassign",
       reason: verdict.requiredFixes.length
-        ? `未通过：${verdict.requiredFixes.join("；")}`
+        ? `未通过，需重做：${verdict.requiredFixes.join("；")}`
         : `偏差 ${verdict.deviation.score} 超阈值 ${threshold}`,
     };
   }

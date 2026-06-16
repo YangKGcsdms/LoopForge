@@ -19,8 +19,8 @@ describe("goalGate", () => {
   it("通过但偏差超阈值 → reassign", () => {
     assert.equal(goalGate(v(true, 0.5)).action, "reassign");
   });
-  it("未通过且偏差不超阈值 → block", () => {
-    assert.equal(goalGate(v(false, 0.1)).action, "block");
+  it("未通过且偏差不超阈值 → reassign（带 fixes 重开，不再 block）", () => {
+    assert.equal(goalGate(v(false, 0.1)).action, "reassign");
   });
   it("自定义阈值放宽 → allow", () => {
     assert.equal(goalGate(v(true, 0.5), { deviationThreshold: 0.6 }).action, "allow");

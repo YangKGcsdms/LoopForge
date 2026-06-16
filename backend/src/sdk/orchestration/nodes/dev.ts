@@ -82,3 +82,22 @@ export const devReviewer: EvaluatorNode<DevReviewInput> = {
     };
   },
 };
+
+/**
+ * 红队对抗评审 —— 与 devReviewer 并行跑，默认假设开发在谎报/偷工，专挑能"打回"的硬伤。
+ * 治"单个评审员橡皮图章"：只有它和 devReviewer 都判 pass，loop 才收敛。
+ */
+export const devRedTeam: EvaluatorNode<DevReviewInput> = {
+  id: "dev-redteam",
+  kind: "evaluator",
+  purpose: "review",
+  role: "你是红队评审员，立场是对抗的：默认这次开发没真做完、测试没真跑、产出可能编译/运行不起来。",
+  output: verdictContract,
+  render(input, _ctx) {
+    return {
+      static:
+        "对抗式审查，逐条质疑：testsRun 是否可信（null 或可疑数字一律视为未验证）、filesTouched 是否真能编译通过、selfCheck 是否只是自说自话、产出是否偏离验收标准。只要存疑就 pass=false 并把质疑点写进 requiredFixes；只有找不到任何硬伤才给 pass=true。宁可错杀，不可放过。",
+      dynamic: `子任务：${JSON.stringify(input.task)}\n最终目标：${input.goal}\n开发回报：${JSON.stringify(input.step, null, 2)}`,
+    };
+  },
+};

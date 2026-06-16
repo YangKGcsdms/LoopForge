@@ -92,22 +92,49 @@ export class ClaudeAgentProvider implements SdkProvider {
     try {
       let result = "";
       let usage: AgentSendResult["usage"];
-      // 官方原语：query({ prompt, options }) 返回异步消息流，最终 result 在 type==="result" 的消息里。
+      let model = opts.model?.id;
+      // 审批桥接：提供 approve 时用 default 模式 + canUseTool，把需批准的工具（Bash 等）交给外部裁决；
+      // allowedTools 里的安全工具自动放行，不触发审批。没有 approve 时退回原来的 acceptEdits。
+      const canUseTool = opts.approve
+        ? async (toolName: string, input: unknown, o?: { signal?: AbortSignal }) => {
+            const decision = await opts.approve!({ tool: toolName, input, cwd: opts.cwd, signal: o?.signal });
+            return decision.allow
+              ? { behavior: "allow" as const, updatedInput: input as Record<string, unknown> }
+              : { behavior: "deny" as const, message: decision.reason ?? "审批未通过" };
+          }
+        : undefined;
+      const permissionMode = canUseTool ? "default" : opts.mode === "plan" ? "plan" : "acceptEdits";
+      // 官方原语：query({ prompt, options }) 返回异步消息流；system(init) 带真实 model，result 带终态。
       for await (const message of loaded.sdk.query({
         prompt: opts.prompt,
         options: {
           cwd: opts.cwd,
           model: opts.model?.id,
-          permissionMode: opts.mode === "plan" ? "plan" : "acceptEdits",
+          permissionMode,
+          ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
+          ...(canUseTool ? { canUseTool } : {}),
         },
       })) {
-        const m = message as { type?: string; result?: string; usage?: { input_tokens?: number; output_tokens?: number } };
+        const m = message as {
+          type?: string;
+          subtype?: string;
+          model?: string;
+          result?: string;
+          is_error?: boolean;
+          errors?: string[];
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+        if (m.type === "system" && typeof m.model === "string") model = m.model;
         if (m.type === "result") {
+          // 错误结果（error_during_execution / error_max_turns 等）：抛真因，别静默变成空串。
+          if (m.is_error || (m.subtype && m.subtype !== "success")) {
+            throw new Error(m.errors?.join("；") || `Claude 运行错误（${m.subtype ?? "unknown"}）`);
+          }
           if (typeof m.result === "string") result = m.result;
           if (m.usage) usage = { inputTokens: m.usage.input_tokens ?? 0, outputTokens: m.usage.output_tokens ?? 0 };
         }
       }
-      return { result, model: opts.model?.id, usage, durationMs: Date.now() - started };
+      return { result, model, usage, durationMs: Date.now() - started };
     } finally {
       if (opts.apiKey) {
         if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;

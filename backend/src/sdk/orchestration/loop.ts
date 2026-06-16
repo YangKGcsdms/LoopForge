@@ -17,10 +17,32 @@ import type {
   NodeTemplate,
 } from "./node.js";
 
+/**
+ * 多评审合议 —— 主评审 + 对抗评审的 verdict 合并：
+ * 全员 pass 才 pass；requiredFixes 取并集；完成情况取最严（任一未完成即未完成）；偏差取最差。
+ * 单评审时 combine([v]) === v，对既有单评审 loop 无行为变化。
+ */
+export function combineVerdicts(verdicts: EvaluatorVerdict[]): EvaluatorVerdict {
+  return {
+    completion: {
+      done: verdicts.every((v) => v.completion.done),
+      evidence: verdicts.map((v) => v.completion.evidence).filter(Boolean).join(" ｜ "),
+    },
+    deviation: {
+      score: Math.max(...verdicts.map((v) => v.deviation.score)),
+      reason: verdicts.map((v) => v.deviation.reason).filter(Boolean).join(" ｜ "),
+    },
+    pass: verdicts.every((v) => v.pass),
+    requiredFixes: [...new Set(verdicts.flatMap((v) => v.requiredFixes))],
+  };
+}
+
 export interface LoopSpec<I, O, EI> {
   id: string;
   producer: NodeTemplate<I, O>;
   evaluator: EvaluatorNode<EI>;
+  /** 对抗评审员：与主评审并行跑，全员通过才收敛（治单个评审员橡皮图章）。 */
+  adversaries?: EvaluatorNode<EI>[];
   /** 把产出映射成评审输入。 */
   toEvalInput: (output: O, input: I, ctx: NodeRunContext) => EI;
   /** 闸门：基于评审结论决定放行/阻断/重派；默认 goalGate。 */
@@ -73,14 +95,19 @@ export async function runLoop<I, O, EI>(
     }
 
     const evalInput = spec.toEvalInput(produced.output, input, iterCtx);
-    const reviewed = await runNode(spec.evaluator, evalInput, iterCtx, deps);
-    if (reviewed.status === "error" || reviewed.output === undefined) {
+    // 主评审 + 对抗评审并行跑；任一节点失败即 loop error。
+    const evaluatorNodes = [spec.evaluator, ...(spec.adversaries ?? [])];
+    const reviews = await Promise.all(
+      evaluatorNodes.map((ev) => runNode(ev, evalInput, iterCtx, deps)),
+    );
+    if (reviews.some((r) => r.status === "error" || r.output === undefined)) {
       return { loopId: spec.id, status: "error", iterations: n, output: produced.output, history };
     }
 
-    const verdict = reviewed.output;
+    // 合议：全员通过才算过。history.reviewed 记主评审，决策用合并 verdict。
+    const verdict = combineVerdicts(reviews.map((r) => r.output!));
     const decision = gate(verdict);
-    history.push({ iteration: n, produced, reviewed, decision });
+    history.push({ iteration: n, produced, reviewed: reviews[0], decision });
 
     if (done(verdict, decision)) {
       return { loopId: spec.id, status: "converged", iterations: n, output: produced.output, verdict, decision, history };
@@ -99,7 +126,7 @@ export async function runLoop<I, O, EI>(
     status: "max_iterations",
     iterations: maxIterations,
     output: last?.produced.output,
-    verdict: last?.reviewed.output,
+    verdict: priorVerdict ?? last?.reviewed.output,
     decision: last?.decision,
     history,
   };

@@ -59,8 +59,8 @@ describe("runPipeline 集成（mock sender）", () => {
       { requirement: "x", goal: "y" },
       { send: mock, summarize: mock, providerId: "cursor", hooks: [persistHook(store)] },
     );
-    // 难度1 + 出方案1 + 拆解轮×2 + Σ开发轮×2
-    const expected = 2 + r.decompose.iterations * 2 + r.todos.reduce((a, t) => a + t.iterations * 2, 0);
+    // 难度1 + 出方案1 + 拆解轮×2(producer+评审) + Σ开发轮×3(producer+devReviewer+红队)
+    const expected = 2 + r.decompose.iterations * 2 + r.todos.reduce((a, t) => a + t.iterations * 3, 0);
     assert.equal(records.length, expected);
   });
 });

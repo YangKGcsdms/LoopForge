@@ -22,6 +22,7 @@ import {
 import {
   devStepNode,
   devReviewer,
+  devRedTeam,
   type DevReviewInput,
   type DevStepInput,
   type DevStepOutput,
@@ -42,6 +43,7 @@ function devLoopSpec(goal: string): LoopSpec<DevStepInput, DevStepOutput, DevRev
     id: "dev-loop",
     producer: devStepNode,
     evaluator: devReviewer,
+    adversaries: [devRedTeam], // 对抗评审：devReviewer + 红队都判 pass 才收敛
     toEvalInput: (step, input) => ({ task: input.task, step, goal }),
     maxIterations: 3,
   };

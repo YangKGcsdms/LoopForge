@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onUpdated } from "vue";
 import BaseCard from "./BaseCard.vue";
+import BaseTag from "./BaseTag.vue";
 import StatusBadge from "./StatusBadge.vue";
-import SectionTitle from "./SectionTitle.vue";
 import { kindClass, diffClass } from "../lib/format";
 import { type UseRunState } from "../composables/useRun";
 
@@ -46,6 +46,18 @@ onUpdated(async () => {
   });
 });
 
+// 路由方案收成数组，模板里 v-for，避免 4 个格子手写重复
+const routingRows = computed(() => {
+  const r = props.useRunState.routing.value;
+  if (!r) return [];
+  return [
+    { label: "出方案", value: r.plan },
+    { label: "执行", value: r.execute },
+    { label: "评审", value: r.review },
+    { label: "测试", value: r.test },
+  ];
+});
+
 // 计算当前状态
 const currentStatus = computed(() => {
   if (props.useRunState.error.value) return "error";
@@ -54,14 +66,6 @@ const currentStatus = computed(() => {
   if (props.useRunState.live.value.length > 0) return "completed";
   return "empty";
 });
-
-// 状态描述
-const statusDescriptions: Record<string, string> = {
-  empty: "等待运行...",
-  error: "运行出错",
-  running: "正在运行...",
-  completed: "运行完成",
-};
 </script>
 
 <template>
@@ -118,14 +122,8 @@ const statusDescriptions: Record<string, string> = {
       class="flex flex-col"
     >
       <!-- 标题区与状态指示 -->
-      <div class="mb-6 flex items-center justify-between">
-        <SectionTitle
-          title="实时自驱运行"
-          level="h2"
-          spacing="md"
-          divider
-          divider-color="neutral"
-        />
+      <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+        <h2 class="text-lg font-semibold text-slate-900">实时自驱运行</h2>
         <StatusBadge
           :status="currentStatus === 'running' ? 'running' : 'completed'"
           :label="currentStatus === 'running' ? '运行中...' : '已完成'"
@@ -137,14 +135,9 @@ const statusDescriptions: Record<string, string> = {
       <div v-if="props.useRunState.difficulty.value" class="mb-6">
         <div class="flex flex-wrap items-center gap-3">
           <span class="text-sm font-medium text-slate-800">难度</span>
-          <span
-            :class="[
-              diffClass(props.useRunState.difficulty.value.value),
-              'rounded-sm px-3 py-1 text-sm font-semibold'
-            ]"
-          >
+          <BaseTag :color="diffClass(props.useRunState.difficulty.value.value)">
             {{ props.useRunState.difficulty.value.value }}
-          </span>
+          </BaseTag>
           <span v-if="props.useRunState.difficulty.value.reason" class="text-sm text-slate-700">
             {{ props.useRunState.difficulty.value.reason }}
           </span>
@@ -155,29 +148,13 @@ const statusDescriptions: Record<string, string> = {
       <div v-if="props.useRunState.routing.value" class="mb-6">
         <h3 class="mb-3 text-sm font-semibold text-slate-800">路由方案</h3>
         <div class="grid gap-3 sm:grid-cols-2">
-          <div class="flex flex-col gap-1 rounded-md bg-slate-50 p-3">
-            <span class="text-xs font-medium text-slate-700">出方案</span>
-            <span class="font-mono text-sm font-medium text-slate-900">
-              {{ props.useRunState.routing.value.plan }}
-            </span>
-          </div>
-          <div class="flex flex-col gap-1 rounded-md bg-slate-50 p-3">
-            <span class="text-xs font-medium text-slate-700">执行</span>
-            <span class="font-mono text-sm font-medium text-slate-900">
-              {{ props.useRunState.routing.value.execute }}
-            </span>
-          </div>
-          <div class="flex flex-col gap-1 rounded-md bg-slate-50 p-3">
-            <span class="text-xs font-medium text-slate-700">评审</span>
-            <span class="font-mono text-sm font-medium text-slate-900">
-              {{ props.useRunState.routing.value.review }}
-            </span>
-          </div>
-          <div class="flex flex-col gap-1 rounded-md bg-slate-50 p-3">
-            <span class="text-xs font-medium text-slate-700">测试</span>
-            <span class="font-mono text-sm font-medium text-slate-900">
-              {{ props.useRunState.routing.value.test }}
-            </span>
+          <div
+            v-for="r in routingRows"
+            :key="r.label"
+            class="flex flex-col gap-1 rounded-md bg-slate-50 p-3"
+          >
+            <span class="text-xs font-medium text-slate-700">{{ r.label }}</span>
+            <span class="font-mono text-sm font-medium text-slate-900">{{ r.value }}</span>
           </div>
         </div>
       </div>
@@ -210,9 +187,7 @@ const statusDescriptions: Record<string, string> = {
               <h4 class="text-sm font-semibold text-slate-900">
                 TODO 列表
               </h4>
-              <span class="inline-flex items-center justify-center rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-900">
-                {{ (item as any).subtasks.length }} 项
-              </span>
+              <BaseTag color="bg-slate-200 text-slate-700">{{ (item as any).subtasks.length }} 项</BaseTag>
             </div>
             <ul class="space-y-2">
               <li
@@ -225,9 +200,7 @@ const statusDescriptions: Record<string, string> = {
                   <span class="font-medium text-slate-800">{{ s.title }}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="inline-block rounded-sm bg-white px-2 py-1 text-xs font-medium text-slate-700">
-                    {{ s.estimateHours }}h
-                  </span>
+                  <BaseTag color="bg-white text-slate-700">{{ s.estimateHours }}h</BaseTag>
                   <span class="text-xs text-slate-700">{{ s.acceptance }}</span>
                 </div>
               </li>
@@ -239,24 +212,16 @@ const statusDescriptions: Record<string, string> = {
             v-else
             variant="default"
             size="sm"
-            :tone="(item as any).status === 'error' ? 'default' : 'neutral'"
+            :tone="(item as any).status === 'error' ? 'error' : 'neutral'"
           >
             <div class="mb-3 flex flex-wrap items-center gap-2">
               <span class="font-mono font-bold text-slate-950">{{ (item as any).id }}</span>
-              <span
-                :class="[
-                  kindClass((item as any).nodeKind),
-                  'rounded-sm px-2 py-0.5 text-xs font-semibold'
-                ]"
-              >
+              <BaseTag :color="kindClass((item as any).nodeKind)">
                 {{ (item as any).nodeKind }}
-              </span>
-              <span
-                v-if="(item as any).iteration"
-                class="rounded-sm bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-800"
-              >
+              </BaseTag>
+              <BaseTag v-if="(item as any).iteration" color="bg-slate-200 text-slate-700">
                 第 {{ (item as any).iteration }} 轮
-              </span>
+              </BaseTag>
               <StatusBadge
                 :status="getNodeStatus((item as any).status)"
                 :label="(item as any).status"

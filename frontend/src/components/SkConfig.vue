@@ -5,6 +5,7 @@ import BaseButton from "./BaseButton.vue";
 import BaseInput from "./BaseInput.vue";
 import BaseCard from "./BaseCard.vue";
 import BaseSelect from "./BaseSelect.vue";
+import BaseTag from "./BaseTag.vue";
 
 type Tone = "idle" | "ok" | "error" | "info";
 
@@ -159,9 +160,9 @@ onMounted(async () => {
       <template v-if="status?.configured">
         <span class="font-medium text-emerald-600">已配置</span>
         <span class="ml-2 font-mono text-slate-800">{{ status.maskedKey }}</span>
-        <span v-if="status.source === 'env'" class="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-800">
+        <BaseTag v-if="status.source === 'env'" color="bg-slate-200 text-slate-700" class="ml-2">
           来自环境变量
-        </span>
+        </BaseTag>
         <span v-if="status.updatedAt" class="ml-2 text-xs text-slate-600">
           更新于 {{ new Date(status.updatedAt).toLocaleString() }}
         </span>

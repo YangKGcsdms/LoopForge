@@ -14,6 +14,7 @@ import type { Sender } from "./run.js";
 export function makeMockSender(): Sender {
   let decomposeProd = 0;
   const devReviewCount = new Map<string, number>();
+  const devRedTeamCount = new Map<string, number>();
 
   return async (req) => {
     const sys = req.system;
@@ -48,6 +49,23 @@ export function makeMockSender(): Sender {
           requiredFixes: pass ? [] : ["补无权限/越权访问的用例", "对齐验收标准里的审计要求"],
         }),
         durationMs: 7,
+      };
+    }
+
+    // 红队对抗评审 —— 与代码评审同步：第一轮打回、第二轮通过（独立计数，和主评审同进退）
+    if (sys.includes("红队评审员")) {
+      const taskId = req.user.match(/"id":"(T\d+)"/)?.[1] ?? "T?";
+      const n = (devRedTeamCount.get(taskId) ?? 0) + 1;
+      devRedTeamCount.set(taskId, n);
+      const pass = n >= 2;
+      return {
+        result: JSON.stringify({
+          completion: { done: pass, evidence: pass ? "红队复核：测试与产出可信" : "testsRun 存疑、越权场景未证实，按未验证处理" },
+          deviation: { score: pass ? 0.1 : 0.5, reason: pass ? "未发现硬伤" : "存疑即打回" },
+          pass,
+          requiredFixes: pass ? [] : ["红队：给出测试真过的证据", "红队：确认越权/无权限场景被覆盖"],
+        }),
+        durationMs: 6,
       };
     }
 
