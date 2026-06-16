@@ -1,21 +1,32 @@
 /** 工作流页的纯展示逻辑：节点输出 → 可读文本 + 档位/类型/难度的样式映射。抽出以便单测。 */
 
+import { tierColors, kindColors, diffColors, getTokenClasses } from "./semantic-colors";
+
+/**
+ * 获取模型档位的语义色 class
+ * 使用统一 token 映射代替硬编码色值
+ */
 export function tierClass(tier: string): string {
-  if (tier === "strong") return "bg-violet-100 text-violet-700";
-  if (tier === "mid") return "bg-sky-100 text-sky-700";
-  return "bg-slate-100 text-slate-600";
+  const token = tierColors[tier] || tierColors.default;
+  return getTokenClasses(token);
 }
 
+/**
+ * 获取节点类型的语义色 class
+ * 使用统一 token 映射代替硬编码色值
+ */
 export function kindClass(kind: string): string {
-  if (kind === "evaluator") return "bg-amber-100 text-amber-700";
-  if (kind === "gate") return "bg-rose-100 text-rose-700";
-  return "bg-sky-100 text-sky-700";
+  const token = kindColors[kind] || kindColors.default;
+  return getTokenClasses(token);
 }
 
+/**
+ * 获取难度的语义色 class
+ * 使用统一 token 映射代替硬编码色值
+ */
 export function diffClass(v: string): string {
-  if (v === "hard") return "bg-rose-100 text-rose-700";
-  if (v === "medium") return "bg-amber-100 text-amber-700";
-  return "bg-emerald-100 text-emerald-700";
+  const token = diffColors[v] || diffColors.default;
+  return getTokenClasses(token);
 }
 
 /** 把节点输出渲染成可读文本（供打字机逐字显示）。 */

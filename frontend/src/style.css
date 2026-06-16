@@ -1,3 +1,380 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================================
+   全局基线：排版 / 背景 / 焦点态
+   ============================================================================ */
+
+/* ─ HTML / Body 基线 */
+@layer base {
+  html {
+    /* 字体平滑化（macOS）*/
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-white text-slate-900;
+    font-feature-settings: "kern" 1;
+    /* 行高基线 */
+    line-height: 1.5;
+  }
+
+  /* ─ 标题排版：递进式 */
+  h1 {
+    @apply text-4xl font-bold leading-tight;
+    letter-spacing: -0.01em;
+  }
+
+  h2 {
+    @apply text-3xl font-semibold;
+    letter-spacing: -0.005em;
+  }
+
+  h3 {
+    @apply text-2xl font-semibold;
+  }
+
+  h4 {
+    @apply text-xl font-semibold;
+  }
+
+  h5 {
+    @apply text-lg font-medium;
+  }
+
+  h6 {
+    @apply text-base font-medium;
+  }
+
+  /* ─ 正文段落（增强对比度：WCAG AA） */
+  p {
+    @apply text-base leading-relaxed text-slate-800;
+  }
+
+  small {
+    @apply text-sm text-slate-700;
+  }
+
+  /* ─ 列表 */
+  ul,
+  ol {
+    @apply space-y-2;
+  }
+
+  li {
+    @apply text-slate-800;
+  }
+
+  /* ─ 链接 */
+  a {
+    @apply text-violet-600 underline transition-colors duration-150;
+  }
+
+  a:hover {
+    @apply text-violet-700;
+  }
+
+  a:focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-violet-500;
+  }
+
+  /* ─ 代码块 */
+  code {
+    @apply font-mono text-sm text-rose-700 bg-slate-100 rounded px-1.5 py-0.5;
+  }
+
+  pre {
+    @apply bg-slate-900 text-slate-100 rounded-lg p-4 overflow-x-auto;
+    line-height: 1.6;
+  }
+
+  pre code {
+    @apply text-slate-100 bg-none p-0;
+  }
+
+  /* ─ 水平线 */
+  hr {
+    @apply border-slate-200;
+  }
+}
+
+/* ─ 表单基线 */
+@layer base {
+  /* ─ Input / Textarea / Select */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900;
+    @apply transition-colors duration-150;
+    @apply shadow-sm;
+  }
+
+  input[type="text"]::placeholder,
+  input[type="email"]::placeholder,
+  input[type="password"]::placeholder,
+  input[type="number"]::placeholder,
+  input[type="search"]::placeholder,
+  input[type="tel"]::placeholder,
+  input[type="url"]::placeholder,
+  textarea::placeholder {
+    @apply text-slate-400;
+  }
+
+  /* ─ 焦点态：环形高亮（增强可见度） */
+  input:focus,
+  textarea:focus,
+  select:focus {
+    @apply outline-none border-violet-600 ring-2 ring-violet-500 ring-offset-2;
+  }
+
+  /* ─ Disabled 状态 */
+  input:disabled,
+  textarea:disabled,
+  select:disabled {
+    @apply bg-slate-50 text-slate-400 cursor-not-allowed;
+  }
+
+  /* ─ 复选框 / 单选框 */
+  input[type="checkbox"],
+  input[type="radio"] {
+    @apply h-4 w-4 rounded border-slate-300 text-violet-600;
+    @apply cursor-pointer transition-colors duration-150;
+    accent-color: rgb(139, 92, 246); /* violet-600 */
+  }
+
+  input[type="checkbox"]:focus,
+  input[type="radio"]:focus {
+    @apply ring-2 ring-offset-1 ring-violet-500;
+  }
+
+  input[type="checkbox"]:disabled,
+  input[type="radio"]:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+}
+
+/* ─ 按钮基线 */
+@layer base {
+  button {
+    @apply transition-colors duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500;
+  }
+
+  button:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  /* ─ 确保按钮文字对比度足够（WCAG AA） */
+  button {
+    @apply font-medium;
+  }
+}
+
+/* ─ 表格基线 */
+@layer base {
+  table {
+    @apply w-full;
+  }
+
+  th {
+    @apply bg-slate-100 font-semibold text-slate-900 text-left px-4 py-2;
+    @apply border-b border-slate-300;
+  }
+
+  td {
+    @apply px-4 py-2 border-b border-slate-200 text-slate-700;
+  }
+
+  tr:hover {
+    @apply bg-slate-50;
+  }
+
+  /* ─ 可聚焦行的焦点态 */
+  tr:focus-within {
+    @apply bg-slate-50;
+  }
+}
+
+/* ─ 文章/长文本基线 */
+@layer base {
+  article {
+    @apply prose prose-slate;
+  }
+
+  article a {
+    @apply text-violet-600 hover:text-violet-700 underline;
+  }
+
+  article strong {
+    @apply font-semibold text-slate-900;
+  }
+
+  article em {
+    @apply italic text-slate-700;
+  }
+}
+
+/* ============================================================================
+   组件基线：卡片 / 警告框 / 标签（可选，便于一致性）
+   ============================================================================ */
+
+@layer components {
+  /* ─ 卡片容器 */
+  .card {
+    @apply rounded-lg border border-slate-200 bg-white p-6 shadow-base;
+  }
+
+  .card-sm {
+    @apply rounded-md border border-slate-200 bg-white p-3 shadow-sm;
+  }
+
+  .card-lg {
+    @apply rounded-xl border border-slate-200 bg-white p-8 shadow-lg;
+  }
+
+  /* ─ 警告 / 错误 / 成功 / 信息框 */
+  .alert {
+    @apply rounded-lg border px-4 py-3 text-sm;
+  }
+
+  .alert-success {
+    @apply border-emerald-300 bg-emerald-50 text-emerald-800;
+  }
+
+  .alert-warning {
+    @apply border-amber-300 bg-amber-50 text-amber-800;
+  }
+
+  .alert-error {
+    @apply border-rose-300 bg-rose-50 text-rose-800;
+  }
+
+  .alert-info {
+    @apply border-sky-300 bg-sky-50 text-sky-800;
+  }
+
+  /* ─ 标签 */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+
+  .badge-slate {
+    @apply bg-slate-100 text-slate-800;
+  }
+
+  .badge-violet {
+    @apply bg-violet-100 text-violet-800;
+  }
+
+  .badge-emerald {
+    @apply bg-emerald-100 text-emerald-800;
+  }
+
+  .badge-amber {
+    @apply bg-amber-100 text-amber-800;
+  }
+
+  .badge-rose {
+    @apply bg-rose-100 text-rose-800;
+  }
+
+  .badge-sky {
+    @apply bg-sky-100 text-sky-800;
+  }
+
+  .badge-indigo {
+    @apply bg-indigo-100 text-indigo-800;
+  }
+
+  /* ─ 按钮风格（补充，非全部） */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg font-medium;
+    @apply transition-all duration-150;
+  }
+
+  .btn-primary {
+    @apply bg-slate-900 text-white hover:bg-slate-700;
+    @apply focus:ring-violet-500;
+  }
+
+  .btn-secondary {
+    @apply border border-slate-300 bg-white text-slate-900 hover:bg-slate-50;
+    @apply focus:ring-violet-500;
+  }
+
+  .btn-danger {
+    @apply border border-rose-300 text-rose-700 hover:bg-rose-50;
+    @apply focus:ring-rose-500;
+  }
+
+  /* ─ 文本强调 */
+  .text-muted {
+    @apply text-slate-500;
+  }
+
+  .text-subtle {
+    @apply text-slate-400;
+  }
+}
+
+/* ============================================================================
+   焦点态共通（无障碍 a11y）
+   ============================================================================ */
+
+@layer components {
+  /* 确保所有可交互元素有明显焦点态 */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500;
+  }
+
+  /* 深色模式适配（可选，根据需求扩展） */
+  @media (prefers-color-scheme: dark) {
+    body {
+      @apply bg-slate-950 text-slate-50;
+    }
+
+    input,
+    textarea,
+    select {
+      @apply bg-slate-900 border-slate-700 text-slate-50;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      @apply text-slate-500;
+    }
+
+    a {
+      @apply text-violet-400 hover:text-violet-300;
+    }
+  }
+}
+
+/* ============================================================================
+   打印样式（可选）
+   ============================================================================ */
+
+@media print {
+  body {
+    @apply bg-white text-black;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    @apply hidden;
+  }
+
+  a {
+    @apply text-black underline;
+  }
+}
