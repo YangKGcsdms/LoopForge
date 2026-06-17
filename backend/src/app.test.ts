@@ -87,4 +87,19 @@ describe("API 路由", () => {
   it("未知路由 → 404", async () => {
     assert.equal((await fetch(`${base}/api/nope`)).status, 404);
   });
+
+  it("GET /api/fs/list 无 path → 回落 home 目录并列出条目", async () => {
+    const r = await fetch(`${base}/api/fs/list`);
+    assert.equal(r.status, 200);
+    const d = (await r.json()) as { path: string; home: string; entries: unknown[]; isRoot: boolean };
+    assert.equal(d.path, d.home);
+    assert.ok(Array.isArray(d.entries));
+  });
+
+  it("GET /api/fs/list 不存在的 path → 回落 home", async () => {
+    const r = await fetch(`${base}/api/fs/list?path=${encodeURIComponent("/__nope__/xyz")}`);
+    assert.equal(r.status, 200);
+    const d = (await r.json()) as { path: string; home: string };
+    assert.equal(d.path, d.home);
+  });
 });

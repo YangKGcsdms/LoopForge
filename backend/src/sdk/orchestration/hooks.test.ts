@@ -22,6 +22,7 @@ function outEvt(over: Partial<NodeOutputEvent<unknown, unknown>> = {}): NodeOutp
     kind: "producer",
     ctx: { loopId: "L", iteration: 2 },
     input: { a: 1 },
+    prompt: { static: "", dynamic: "" },
     result: { nodeId: "n", kind: "producer", status: "ok", repairs: 0, durationMs: 10, summary: "s", output: { x: 1 } },
     ...over,
   };

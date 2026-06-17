@@ -204,7 +204,7 @@ export async function runNode<I, O>(
     error: errored,
   };
 
-  const outEvt: NodeOutputEvent<I, O> = { nodeId: template.id, kind: template.kind, ctx, input, result };
+  const outEvt: NodeOutputEvent<I, O> = { nodeId: template.id, kind: template.kind, ctx, input, prompt, result };
   for (const h of hooks) await h.onOutput?.(outEvt);
 
   return result;

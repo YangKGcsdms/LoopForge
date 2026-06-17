@@ -203,6 +203,8 @@ export interface NodeOutputEvent<I, O> {
   kind: NodeKind;
   ctx: NodeRunContext;
   input: I;
+  /** 本次 render 出的提示词（静/动两段），供采点钩子捕获完整提示。 */
+  prompt: PromptParts;
   result: NodeResult<O>;
 }
 
@@ -234,6 +236,28 @@ export interface NodeRunRecord {
   requestId?: string;
   durationMs: number;
   createdAt: string;
+
+  // ===== 新增字段：提示词与输入输出完整记录 =====
+  /** 静态提示词部分（角色、契约、长期事实）。 */
+  promptStatic?: string;
+  /** 动态提示词部分（loop 状态、上一轮评审）。 */
+  promptDynamic?: string;
+  /** 系统角色（来自 NodeTemplate.role）。 */
+  systemPrompt?: string;
+  /** 用户输入提示词（render 后的完整提示）。 */
+  userPrompt?: string;
+  /** 完整入参（未截断，JSON 序列化）。 */
+  inputFull?: string;
+  /** 模型原始字符串（不经过契约解析）。 */
+  rawOutput?: string;
+  /** 完整输出（契约解析后的结构，JSON 序列化）。 */
+  outputFull?: string;
+
+  // ===== 新增关联键：便于分析 & 精确查询 =====
+  /** 单次流水线运行 ID（区分断点续跑）。 */
+  runId?: string;
+  /** 所属流程 ID（通常 === loopId，但更明确）。 */
+  stepKey?: string;
 }
 
 /** 落库后端契约。起步用 SQLite/JSONL，可换 Postgres，不动调用方。 */

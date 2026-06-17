@@ -12,4 +12,5 @@ export * from "./verify.js";
 export * from "./store.js";
 export * from "./mock.js";
 export * from "./pipeline.js";
+export * from "./checkpoint.js";
 export * from "./nodes/index.js";

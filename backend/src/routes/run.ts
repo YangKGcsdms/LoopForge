@@ -11,8 +11,12 @@ import {
   makeVerifier,
   persistHook,
   JsonlNodeRunStore,
+  makeFileCheckpointStore,
+  makeRunId,
   type ActSender,
+  type CheckpointStore,
   type NodeHook,
+  type RunManifest,
   type Sender,
   type Verifier,
   type VerifyCheckSpec,
@@ -24,9 +28,42 @@ export const runRouter = Router();
 
 type Deps = { send: Sender; act?: ActSender; verify?: Verifier };
 
+/** 断点续跑用的 checkpoint 单例（与审计用的 NodeRunStore 分家，各落各的）。 */
+const checkpointStore: CheckpointStore = makeFileCheckpointStore();
+
+/** 取已有 run 或新建：resume 命中已存在的运行则复用其 runId，否则建新。 */
+async function resolveRun(
+  resume: string | undefined,
+  input: { requirement: string; goal: string },
+  provider: string,
+  cwd?: string,
+): Promise<RunManifest> {
+  if (resume) {
+    const existing = await checkpointStore.loadRun(resume);
+    if (existing) {
+      const manifest: RunManifest = { ...existing.manifest, status: "running", updatedAt: new Date().toISOString() };
+      await checkpointStore.saveManifest(manifest);
+      return manifest;
+    }
+  }
+  const now = new Date().toISOString();
+  const manifest: RunManifest = {
+    runId: makeRunId(),
+    input,
+    provider,
+    cwd,
+    status: "running",
+    createdAt: now,
+    updatedAt: now,
+  };
+  await checkpointStore.saveManifest(manifest);
+  return manifest;
+}
+
 /**
  * 落盘审计单例 —— 真跑的每条 NodeRunRecord append 到 .data/node-runs.jsonl，
  * 攒成可扫时间线 + 评估蒸馏的原料。dryRun（mock 数据）不落盘，免污染 eval 数据集。
+ * 注：这与 checkpointStore 是两套——审计记摘要时间线，checkpoint 存全量值供续跑。
  */
 let runStore: JsonlNodeRunStore | undefined;
 function persistHooks(dryRun: boolean): NodeHook[] {
@@ -81,6 +118,7 @@ function parseBody(body: unknown) {
   const b = (body ?? {}) as Record<string, unknown>;
   const cwd = typeof b.cwd === "string" && b.cwd.trim() ? b.cwd.trim() : undefined;
   const provider = typeof b.provider === "string" ? b.provider : "claude-agent";
+  const resume = typeof b.resume === "string" && b.resume.trim() ? b.resume.trim() : undefined;
   return {
     requirement: b.requirement,
     goal: b.goal,
@@ -88,28 +126,66 @@ function parseBody(body: unknown) {
     provider,
     dryRun: b.dryRun !== false,
     verifyChecks: parseVerifyChecks(b.verifyChecks),
+    resume,
   };
 }
 
 /** 非流式：POST /api/run/pipeline */
 runRouter.post("/pipeline", async (req, res) => {
-  const { requirement, goal, cwd, provider, dryRun, verifyChecks } = parseBody(req.body);
+  const { requirement, goal, cwd, provider, dryRun, verifyChecks, resume } = parseBody(req.body);
   if (typeof requirement !== "string" || typeof goal !== "string") {
     return res.status(400).json({ error: "missing_requirement_or_goal" });
   }
   const d = await resolveDeps(dryRun, provider, cwd, verifyChecks);
   if ("error" in d) return res.status(400).json({ error: "no_api_key", detail: d.error });
   const workspace: Workspace | undefined = cwd ? { cwd } : undefined;
-  const result = await runPipeline({ requirement, goal }, {
-    send: d.send,
-    act: d.act,
-    verify: d.verify,
-    summarize: d.send,
-    providerId: provider,
-    workspace,
-    hooks: persistHooks(dryRun), // 真跑落盘审计；dryRun 不落
-  });
-  res.json({ dryRun, ...result });
+  const manifest = await resolveRun(resume, { requirement, goal }, provider, cwd);
+  try {
+    const result = await runPipeline({ requirement, goal }, {
+      send: d.send,
+      act: d.act,
+      verify: d.verify,
+      summarize: d.send,
+      providerId: provider,
+      workspace,
+      hooks: persistHooks(dryRun), // 真跑落盘审计；dryRun 不落
+      checkpoint: { store: checkpointStore, runId: manifest.runId }, // 断点续跑
+    });
+    await checkpointStore.saveManifest({ ...manifest, status: "done", updatedAt: new Date().toISOString() });
+    res.json({ dryRun, runId: manifest.runId, ...result });
+  } catch (e) {
+    await checkpointStore.saveManifest({ ...manifest, status: "failed", updatedAt: new Date().toISOString() });
+    res.status(500).json({ error: "pipeline_failed", runId: manifest.runId, message: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** 运行历史：GET /api/run/history */
+runRouter.get("/history", async (_req, res) => {
+  res.json({ runs: await checkpointStore.listRuns() });
+});
+
+interface DetailSubtask {
+  id: string;
+  title: string;
+  estimateHours: number;
+  acceptance: string;
+}
+
+/** 单次运行详情：GET /api/run/detail/:runId —— 含任务列表与验收标准。 */
+runRouter.get("/detail/:runId", async (req, res) => {
+  const file = await checkpointStore.loadRun(req.params.runId);
+  if (!file) return res.status(404).json({ error: "not_found" });
+  const decompose = file.steps["decompose"]?.value as { subtasks?: DetailSubtask[] } | undefined;
+  const subtasks = decompose?.subtasks ?? [];
+  const todos = subtasks.map((s) => ({
+    id: s.id,
+    title: s.title,
+    estimateHours: s.estimateHours,
+    acceptance: s.acceptance,
+    status: (file.steps[`dev:${s.id}`]?.status as string | undefined) ?? "pending",
+  }));
+  const difficulty = (file.steps["assess"]?.value as { difficulty?: string; reason?: string | null } | undefined) ?? null;
+  res.json({ manifest: file.manifest, difficulty, todos });
 });
 
 /** 流式：GET /api/run/pipeline/stream（EventSource） */
@@ -127,8 +203,7 @@ runRouter.get("/pipeline/stream", async (req, res) => {
 
   const requirement = String(req.query.requirement ?? "");
   const goal = String(req.query.goal ?? "");
-  const cwd =
-    typeof req.query.cwd === "string" && req.query.cwd.trim() ? req.query.cwd.trim() : undefined;
+  const cwd = typeof req.query.cwd === "string" && req.query.cwd.trim() ? req.query.cwd.trim() : undefined;
   const provider = typeof req.query.provider === "string" ? req.query.provider : "claude-agent";
   const dryRun = req.query.dryRun !== "false";
   let verifyChecks: VerifyCheckSpec[] | undefined;
@@ -137,14 +212,20 @@ runRouter.get("/pipeline/stream", async (req, res) => {
   } catch {
     verifyChecks = undefined;
   }
+  const resume = typeof req.query.resume === "string" && req.query.resume.trim() ? req.query.resume.trim() : undefined;
   if (!requirement || !goal) {
     send("error", { message: "缺少 requirement 或 goal" });
     return res.end();
   }
 
+  // 建/续 run，并把 runId 第一时间回传前端（用于断点续跑）
+  const manifest = await resolveRun(resume, { requirement, goal }, provider, cwd);
+  send("run-started", { runId: manifest.runId, resumed: !!resume });
+
   try {
     const d = await resolveDeps(dryRun, provider, cwd, verifyChecks);
     if ("error" in d) {
+      await checkpointStore.saveManifest({ ...manifest, status: "failed", updatedAt: new Date().toISOString() });
       send("error", { message: d.error });
       return res.end();
     }
@@ -172,8 +253,11 @@ runRouter.get("/pipeline/stream", async (req, res) => {
       workspace,
       hooks: [...persistHooks(dryRun), streamHook], // 真跑落盘 + SSE 推流
       onEvent: send,
+      checkpoint: { store: checkpointStore, runId: manifest.runId }, // 断点续跑
     });
+    await checkpointStore.saveManifest({ ...manifest, status: "done", updatedAt: new Date().toISOString() });
   } catch (e) {
+    await checkpointStore.saveManifest({ ...manifest, status: "failed", updatedAt: new Date().toISOString() });
     send("error", { message: e instanceof Error ? e.message : String(e) });
   } finally {
     res.end();
