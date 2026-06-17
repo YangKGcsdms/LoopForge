@@ -46,13 +46,26 @@ export interface SendResult {
 /** think 发送原语的抽象边界。落地时 = (req) => provider.send（只读单发）。 */
 export type Sender = (req: SendRequest) => Promise<SendResult>;
 
-/** act 请求：在 cwd 下开真工具跑 agentic loop。approve/tools 已在构造 ActSender 时闭包绑定。 */
+/**
+ * 内部 SDK session 的流式事件（镜像 sdk AgentStreamEvent，编排层保持解耦）。
+ * act 跑 agentic loop 时实时往外抛，供前端呈现"类 GUI Claude Code"的运行中输出。
+ */
+export type ActStreamEvent =
+  | { kind: "text"; delta: string }
+  | { kind: "thinking"; delta: string }
+  | { kind: "tool_use"; tool: string; input: unknown }
+  | { kind: "tool_result"; ok: boolean | null; preview?: string }
+  | { kind: "ask_human"; question: string };
+
+/** act 请求：在 cwd 下开真工具跑 agentic loop。approve/askHuman/tools 已在构造 ActSender 时闭包绑定。 */
 export interface ActRequest {
   system: string;
   user: string;
   model?: ModelRef;
   cwd: string;
   tools?: string[];
+  /** 内部 SDK session 流式事件回调（runNode 注入，带节点上下文转发到 SSE）。 */
+  onMessage?: (event: ActStreamEvent) => void;
 }
 
 /** act 结果 = send 结果 + 采集到的证据。 */
@@ -79,6 +92,8 @@ export interface NodeDeps {
   hooks?: NodeHook[];
   /** 按节点路由模型（按用途/难度）：返回覆盖模型，省略则用 template.model。 */
   resolveModel?: (info: { id: string; kind: NodeKind; purpose?: NodePurpose }) => ModelRef | undefined;
+  /** act 节点内部 SDK session 的流式事件回调（带节点上下文），落地转 SSE 给前端实时展示。 */
+  onActMessage?: (info: { nodeId: string; kind: NodeKind; iteration?: number; event: ActStreamEvent }) => void;
 }
 
 function instruction<O>(c: Contract<O>): string {
@@ -133,7 +148,12 @@ export async function runNode<I, O>(
     while (true) {
       let sent: SendResult;
       if (isAct) {
-        const r = await deps.act!({ system, user, model, cwd, tools: template.tools });
+        // 把 act 内部 SDK 的流式事件挂上节点上下文，转给 deps.onActMessage（落地推 SSE）。
+        const onMessage = deps.onActMessage
+          ? (event: ActStreamEvent) =>
+              deps.onActMessage!({ nodeId: template.id, kind: template.kind, iteration: ctx.iteration, event })
+          : undefined;
+        const r = await deps.act!({ system, user, model, cwd, tools: template.tools, onMessage });
         evidence = r.evidence; // 留最后一轮的证据
         sent = r;
       } else {

@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { providerSender, providerActSender } from "./sender.js";
 import type { SdkProvider } from "../provider.js";
-import type { AgentActOptions, AgentSendOptions, ToolApprover } from "../types.js";
+import type { AgentActOptions, AgentSendOptions } from "../types.js";
 
 describe("providerSender", () => {
   it("合并 system+user 成单条 prompt，透传 cwd/model/apiKey，回填结果", async () => {
@@ -62,15 +62,17 @@ describe("providerSender", () => {
 });
 
 describe("providerActSender", () => {
-  it("调 provider.act，绑 approve/allowedTools，回填 evidence", async () => {
+  it("调 provider.act，绑 askHuman/allowedTools + 透传 onMessage，回填 evidence", async () => {
     let captured: AgentActOptions | undefined;
-    const approve: ToolApprover = async () => ({ allow: true });
+    const askHuman = async () => ({ answer: "go" });
+    const events: unknown[] = [];
     const provider: Pick<SdkProvider, "send" | "act"> = {
       async send() {
         return { result: "", durationMs: 1 };
       },
       async act(o) {
         captured = o;
+        o.onMessage?.({ kind: "text", delta: "hi" }); // 模拟内部流式
         return {
           result: "R",
           durationMs: 2,
@@ -78,10 +80,17 @@ describe("providerActSender", () => {
         };
       },
     };
-    const r = await providerActSender(provider, "k", { allowedTools: ["Read"], approve })({ system: "S", user: "U", cwd: "/c" });
+    const r = await providerActSender(provider, "k", { allowedTools: ["Read"], askHuman })({
+      system: "S",
+      user: "U",
+      cwd: "/c",
+      onMessage: (e) => events.push(e),
+    });
     assert.equal(captured?.cwd, "/c");
     assert.deepEqual(captured?.allowedTools, ["Read"]);
-    assert.equal(typeof captured?.approve, "function");
+    assert.equal(typeof captured?.askHuman, "function"); // 默认全自动：绑 askHuman 而非逐工具 approve
+    assert.equal(captured?.approve, undefined);
+    assert.deepEqual(events, [{ kind: "text", delta: "hi" }]); // 流式事件透传到 req.onMessage
     assert.deepEqual(r.evidence.filesTouched, ["x.ts"]);
     assert.equal(r.result, "R");
   });

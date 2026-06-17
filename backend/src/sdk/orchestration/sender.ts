@@ -9,16 +9,18 @@
 
 import type { ActResult, ActSender, Sender } from "./run.js";
 import type { SdkProvider } from "../provider.js";
-import type { ToolApprover } from "../types.js";
+import type { AskHuman, ToolApprover } from "../types.js";
 import { getProvider } from "../registry.js";
 
-/** Sender 装配选项：工作目录 + 工具放行/审批（透传到 provider）。 */
+/** Sender 装配选项：工作目录 + 工具放行/审批/问询（透传到 provider）。 */
 export interface SenderOpts {
   defaultCwd?: string;
   /** 免审批放行的安全工具；其余需批准的工具走 approve（仅 act 路径用）。 */
   allowedTools?: string[];
-  /** 工具审批回调（如飞书审批，仅 act 路径用）。 */
+  /** 工具审批回调（如飞书审批，仅 act 路径用，旧逐工具审批模式）。 */
   approve?: ToolApprover;
+  /** 人工问询回调（飞书）；给了则 act 注入 ask_human 工具，agent 纠结才问（默认全自动）。 */
+  askHuman?: AskHuman;
 }
 
 /** think-sender：provider.send（只读单发）。think 节点不改文件、不审批。 */
@@ -83,7 +85,8 @@ export function providerActSender(
       model: req.model,
       mode: "agent",
       allowedTools: opts.allowedTools,
-      approve: opts.approve,
+      askHuman: opts.askHuman, // 默认全自动 + 纠结才问（不再逐工具 approve）
+      onMessage: req.onMessage, // 内部 SDK session 流式事件转发（前端实时展示）
     });
     return {
       result: r.result,

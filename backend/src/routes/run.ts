@@ -22,7 +22,8 @@ import {
   type VerifyCheckSpec,
   type Workspace,
 } from "../sdk/orchestration/index.js";
-import { runtimeApprover, SAFE_TOOLS } from "../sdk/approval/index.js";
+import { runtimeAsker, SAFE_TOOLS } from "../sdk/approval/index.js";
+import { runHub } from "./runHub.js";
 
 export const runRouter = Router();
 
@@ -97,8 +98,8 @@ async function resolveDeps(
   return {
     // think 节点：只读单发。
     send: senderFor(provider, key, { defaultCwd: cwd }),
-    // act 节点：真工具 + 安全工具自动放行，Bash 等走飞书长连接审批。
-    act: actSenderFor(provider, key, { defaultCwd: cwd, allowedTools: SAFE_TOOLS, approve: await runtimeApprover() }),
+    // act 节点：真工具默认全自动（bypassPermissions，不逐工具弹卡）；agent 纠结才走飞书 ask_human。
+    act: actSenderFor(provider, key, { defaultCwd: cwd, allowedTools: SAFE_TOOLS, askHuman: await runtimeAsker() }),
     // act 后独立校验：git diff + 请求里配置的 test/typecheck 命令（拿地面真值）。
     verify: makeVerifier({ checks: verifyChecks }),
   };
@@ -188,52 +189,37 @@ runRouter.get("/detail/:runId", async (req, res) => {
   res.json({ manifest: file.manifest, difficulty, todos });
 });
 
-/** 流式：GET /api/run/pipeline/stream（EventSource） */
-runRouter.get("/pipeline/stream", async (req, res) => {
-  res.set({
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  res.flushHeaders();
-  const send = (event: string, data: unknown) => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
-
-  const requirement = String(req.query.requirement ?? "");
-  const goal = String(req.query.goal ?? "");
-  const cwd = typeof req.query.cwd === "string" && req.query.cwd.trim() ? req.query.cwd.trim() : undefined;
-  const provider = typeof req.query.provider === "string" ? req.query.provider : "claude-agent";
-  const dryRun = req.query.dryRun !== "false";
-  let verifyChecks: VerifyCheckSpec[] | undefined;
-  try {
-    verifyChecks = parseVerifyChecks(JSON.parse(String(req.query.verifyChecks ?? "null")));
-  } catch {
-    verifyChecks = undefined;
-  }
-  const resume = typeof req.query.resume === "string" && req.query.resume.trim() ? req.query.resume.trim() : undefined;
-  if (!requirement || !goal) {
-    send("error", { message: "缺少 requirement 或 goal" });
-    return res.end();
-  }
-
-  // 建/续 run，并把 runId 第一时间回传前端（用于断点续跑）
-  const manifest = await resolveRun(resume, { requirement, goal }, provider, cwd);
-  send("run-started", { runId: manifest.runId, resumed: !!resume });
-
+/**
+ * 脱离连接独立跑一条 pipeline，所有事件写进 runHub（缓冲 + 扇出）。
+ * 不依赖任何 SSE 连接——客户端刷新/关页都不影响它跑完；事件留在 hub 供重连回放。
+ */
+async function executeRun(
+  manifest: RunManifest,
+  resumed: boolean,
+  params: { requirement: string; goal: string; cwd?: string; provider: string; dryRun: boolean; verifyChecks?: VerifyCheckSpec[] },
+): Promise<void> {
+  const { requirement, goal, cwd, provider, dryRun, verifyChecks } = params;
+  const runId = manifest.runId;
+  const saveStatus = (status: RunManifest["status"]) =>
+    checkpointStore.saveManifest({ ...manifest, status, updatedAt: new Date().toISOString() });
+  runHub.emit(runId, "run-started", { runId, resumed });
   try {
     const d = await resolveDeps(dryRun, provider, cwd, verifyChecks);
     if ("error" in d) {
-      await checkpointStore.saveManifest({ ...manifest, status: "failed", updatedAt: new Date().toISOString() });
-      send("error", { message: d.error });
-      return res.end();
+      await saveStatus("failed");
+      runHub.emit(runId, "error", { message: d.error });
+      runHub.finish(runId, "failed");
+      return;
     }
     const workspace: Workspace | undefined = cwd ? { cwd } : undefined;
     const streamHook: NodeHook = {
       name: "sse",
+      onInput(evt) {
+        // 节点一进入就告知前端（含 think 节点）：立刻显示"运行中"加载态，知道在跑哪个、轮到谁
+        runHub.emit(runId, "node-start", { id: evt.nodeId, kind: evt.kind, iteration: evt.ctx.iteration ?? null });
+      },
       onOutput(evt) {
-        send("node-end", {
+        runHub.emit(runId, "node-end", {
           id: evt.nodeId,
           kind: evt.kind,
           status: evt.result.status,
@@ -251,15 +237,76 @@ runRouter.get("/pipeline/stream", async (req, res) => {
       summarize: d.send,
       providerId: provider,
       workspace,
-      hooks: [...persistHooks(dryRun), streamHook], // 真跑落盘 + SSE 推流
-      onEvent: send,
-      checkpoint: { store: checkpointStore, runId: manifest.runId }, // 断点续跑
+      hooks: [...persistHooks(dryRun), streamHook], // 真跑落盘 + 推流到 hub
+      onEvent: (e, data) => runHub.emit(runId, e, data),
+      // act 节点内部 SDK session 的流式事件 → 前端实时展示"运行中节点"（类 GUI Claude Code）
+      onActMessage: (info) => runHub.emit(runId, "node-stream", info),
+      checkpoint: { store: checkpointStore, runId }, // 断点续跑
     });
-    await checkpointStore.saveManifest({ ...manifest, status: "done", updatedAt: new Date().toISOString() });
+    await saveStatus("done");
+    runHub.finish(runId, "done");
   } catch (e) {
-    await checkpointStore.saveManifest({ ...manifest, status: "failed", updatedAt: new Date().toISOString() });
-    send("error", { message: e instanceof Error ? e.message : String(e) });
-  } finally {
-    res.end();
+    await saveStatus("failed");
+    runHub.emit(runId, "error", { message: e instanceof Error ? e.message : String(e) });
+    runHub.finish(runId, "failed");
   }
+}
+
+/**
+ * 流式：GET /api/run/pipeline/stream（EventSource）
+ * 运行与观看解耦：若该 runId 正在跑（hub 里有 live channel）→ **只订阅**（回放缓冲追平 + 接实时），
+ * 不重复启动；否则新建/续跑一条 detached run。刷新后带同一 runId 重连即可无缝续看。
+ */
+runRouter.get("/pipeline/stream", async (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders();
+  // 终态事件后主动收尾本连接（避免 EventSource 自动重连再触发新 run）
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    if (event === "done" || event === "error") {
+      try {
+        res.end();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const requirement = String(req.query.requirement ?? "");
+  const goal = String(req.query.goal ?? "");
+  const cwd = typeof req.query.cwd === "string" && req.query.cwd.trim() ? req.query.cwd.trim() : undefined;
+  const provider = typeof req.query.provider === "string" ? req.query.provider : "claude-agent";
+  const dryRun = req.query.dryRun !== "false";
+  let verifyChecks: VerifyCheckSpec[] | undefined;
+  try {
+    verifyChecks = parseVerifyChecks(JSON.parse(String(req.query.verifyChecks ?? "null")));
+  } catch {
+    verifyChecks = undefined;
+  }
+  const resume = typeof req.query.resume === "string" && req.query.resume.trim() ? req.query.resume.trim() : undefined;
+
+  // 重连/续看：runId 仍在 hub（运行中或刚收尾 30s 内）→ 只订阅回放追平，绝不重启。
+  // 运行中会继续接实时；已收尾则回放到 done 事件后连接自然收尾。
+  if (resume && runHub.has(resume)) {
+    const off = runHub.subscribe(resume, send);
+    req.on("close", off);
+    return;
+  }
+
+  if (!requirement || !goal) {
+    send("error", { message: "缺少 requirement 或 goal" });
+    return;
+  }
+
+  // 新建/续跑：建 manifest、开 channel、本连接先订阅，再 detached 启动（不 await，连接断开也照跑）
+  const manifest = await resolveRun(resume, { requirement, goal }, provider, cwd);
+  runHub.open(manifest.runId);
+  const off = runHub.subscribe(manifest.runId, send);
+  req.on("close", off);
+  void executeRun(manifest, !!resume, { requirement, goal, cwd, provider, dryRun, verifyChecks });
 });

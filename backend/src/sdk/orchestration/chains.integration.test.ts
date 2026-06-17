@@ -4,7 +4,7 @@
  *
  * 链路 A：完整 pipeline（think+act 收敛）
  * 链路 B：接地气（evidence + verify → grounded evaluator 据 testsPass 打回/收敛，证明判地面真值非自报）
- * 链路 C：审批（act → providerActSender → provider.act → canUseTool → approver allow/deny）
+ * 链路 C：默认 auto + 纠结才问（act → providerActSender → provider.act → ask_human → asker）
  */
 
 import { describe, it } from "node:test";
@@ -19,7 +19,6 @@ import { devStepNode, devReviewer, devRedTeam, type DevReviewInput, type DevStep
 import type { Subtask } from "./nodes/decompose.js";
 import type { EvaluatorVerdict, NodeTemplate } from "./node.js";
 import type { SdkProvider } from "../provider.js";
-import { autoApprover, denyApprover } from "../approval/policy.js";
 
 function verdictJson(pass: boolean): string {
   const v: EvaluatorVerdict = {
@@ -120,55 +119,57 @@ describe("链路B · 接地气（evidence+verify → grounded evaluator）", () 
   });
 });
 
-// ============ 链路 C：审批（act → canUseTool → approver）============
-describe("链路C · 审批（act → provider.act → canUseTool → approver）", () => {
-  const ranContract = defineContract<{ ran: boolean }>({
-    name: "ran",
-    schema: "{ ran: boolean }",
-    validate(d): ContractResult<{ ran: boolean }> {
-      return typeof (d as { ran?: unknown }).ran === "boolean"
-        ? { ok: true, value: d as { ran: boolean } }
-        : { ok: false, errors: ["ran 必须是 boolean"] };
+// ============ 链路 C：默认 auto + 纠结才问（act → provider.act → ask_human → asker）============
+// 新模型：act 默认全自动（bypassPermissions，不逐工具审批），agent 只在纠结时调 ask_human，
+// providerActSender 绑 askHuman 而非 approve。这里验证 askHuman 的答复如实流回产出。
+describe("链路C · 人工问询（act 默认 auto，纠结才走 ask_human）", () => {
+  const ansContract = defineContract<{ answer: string }>({
+    name: "ans",
+    schema: "{ answer: string }",
+    validate(d): ContractResult<{ answer: string }> {
+      return typeof (d as { answer?: unknown }).answer === "string"
+        ? { ok: true, value: d as { answer: string } }
+        : { ok: false, errors: ["answer 必须是 string"] };
     },
   });
-  const approvalNode: NodeTemplate<Record<string, never>, { ran: boolean }> = {
-    id: "appr",
+  const askNode: NodeTemplate<Record<string, never>, { answer: string }> = {
+    id: "ask",
     kind: "producer",
     exec: "act",
-    role: "审批演示节点",
-    output: ranContract,
+    role: "问询演示节点",
+    output: ansContract,
     render: () => ({ static: "", dynamic: "" }),
   };
 
-  /** 假 provider：act 时就一次 Bash，把审批结果如实反映进 evidence 与产出。 */
+  /** 假 provider：act 时模拟"纠结"调一次 ask_human，把人的答复如实反映进产出。 */
   const fakeProvider: Pick<SdkProvider, "send" | "act"> = {
     async send() {
       return { result: "", durationMs: 1 };
     },
     async act(o) {
-      const decision = await o.approve?.({ tool: "Bash", input: { command: "npm test" }, cwd: o.cwd });
-      const allowed = decision?.allow ?? false;
+      const res = await o.askHuman?.({ question: "方案 A 还是 B？", cwd: o.cwd });
+      const answer = res?.answer ?? "（无人作答）";
+      o.onMessage?.({ kind: "ask_human", question: "方案 A 还是 B？" });
       return {
-        result: JSON.stringify({ ran: allowed }),
+        result: JSON.stringify({ answer }),
         durationMs: 1,
-        evidence: { toolCalls: [{ tool: "Bash", input: { command: "npm test" }, ok: allowed }], filesTouched: [], bashRuns: [{ command: "npm test", ok: allowed }] },
+        evidence: { toolCalls: [], filesTouched: [], bashRuns: [] },
       };
     },
   };
 
-  it("autoApprover 放行 → Bash 执行、evidence ok=true", async () => {
-    const act = providerActSender(fakeProvider, "k", { approve: autoApprover });
-    const r = await runNode(approvalNode, {}, { workspace: { cwd: "/w" } }, { send: async () => ({ result: "", durationMs: 1 }), act });
+  it("act 默认不再逐工具 approve，纠结时调 askHuman，答复回流产出", async () => {
+    const asker = async () => ({ answer: "选 A" });
+    const act = providerActSender(fakeProvider, "k", { askHuman: asker });
+    const r = await runNode(askNode, {}, { workspace: { cwd: "/w" } }, { send: async () => ({ result: "", durationMs: 1 }), act });
     assert.equal(r.status, "ok");
-    assert.equal(r.output?.ran, true);
-    assert.equal(r.evidence?.bashRuns[0].ok, true);
+    assert.equal(r.output?.answer, "选 A");
   });
 
-  it("denyApprover 拒绝 → Bash 不执行、evidence ok=false", async () => {
-    const act = providerActSender(fakeProvider, "k", { approve: denyApprover });
-    const r = await runNode(approvalNode, {}, { workspace: { cwd: "/w" } }, { send: async () => ({ result: "", durationMs: 1 }), act });
+  it("没配 askHuman（飞书未配）→ act 仍跑，agent 拿不到人答复但不阻塞", async () => {
+    const act = providerActSender(fakeProvider, "k", {}); // 无 askHuman
+    const r = await runNode(askNode, {}, { workspace: { cwd: "/w" } }, { send: async () => ({ result: "", durationMs: 1 }), act });
     assert.equal(r.status, "ok");
-    assert.equal(r.output?.ran, false);
-    assert.equal(r.evidence?.bashRuns[0].ok, false);
+    assert.equal(r.output?.answer, "（无人作答）");
   });
 });

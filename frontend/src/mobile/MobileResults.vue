@@ -6,6 +6,7 @@
 import { computed, nextTick, onUpdated, ref } from "vue";
 import BaseTag from "../components/BaseTag.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import LiveSession from "../components/LiveSession.vue";
 import { kindClass, diffClass } from "../lib/format";
 import { type UseRunState } from "../composables/useRun";
 
@@ -108,6 +109,11 @@ const status = computed(() => {
               <span class="truncate font-mono text-[11px] text-ink">{{ r.value }}</span>
             </div>
           </div>
+        </div>
+
+        <!-- 运行中节点：加载态 + 内部 SDK session 实时输出（类 GUI Claude Code） -->
+        <div v-if="runState.activeNodes.value.length" class="mb-3.5 space-y-3">
+          <LiveSession v-for="n in runState.activeNodes.value" :key="`${n.id}#${n.iteration}`" :node="n" />
         </div>
 
         <!-- 内容流 -->

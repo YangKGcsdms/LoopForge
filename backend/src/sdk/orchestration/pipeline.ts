@@ -3,7 +3,7 @@
  * 与 HTTP 解耦：路由只负责装配 sender/catalog 并把事件透传给 SSE。
  */
 
-import { runNode, type ActSender, type Sender, type Verifier } from "./run.js";
+import { runNode, type ActSender, type NodeDeps, type Sender, type Verifier } from "./run.js";
 import { runLoop, type LoopSpec } from "./loop.js";
 import {
   difficultyAssessor,
@@ -82,6 +82,8 @@ export interface PipelineDeps {
   hooks?: NodeHook[];
   /** 流式事件回调（phase / difficulty / todos / done）。 */
   onEvent?: (event: string, data: unknown) => void;
+  /** act 节点内部 SDK session 的流式事件回调（落地转 SSE node-stream，前端实时展示运行中节点）。 */
+  onActMessage?: NodeDeps["onActMessage"];
   /** 断点续跑：给定 store + runId 后，已成功步骤直接读缓存跳过模型调用。 */
   checkpoint?: { store: CheckpointStore; runId: string };
 }
@@ -105,7 +107,7 @@ export interface PipelineResult {
 
 export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Promise<PipelineResult> {
   // 合并两线：act/verify（接地气 act 节点）+ checkpoint（断点续跑）同时在场。
-  const { send, act, verify, summarize, providerId, workspace, hooks = [], onEvent, checkpoint } = deps;
+  const { send, act, verify, summarize, providerId, workspace, hooks = [], onEvent, onActMessage, checkpoint } = deps;
   const emit = (event: string, data: unknown) => onEvent?.(event, data);
 
   /**
@@ -237,10 +239,11 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       async () => {
         const dev = await runLoop(devLoopSpec(input.goal), { task }, { workspace }, {
           send,
-          act, // devStep 是 act 节点：真改代码 + 审批 + 证据
+          act, // devStep 是 act 节点：真改代码 + 证据（默认全自动，纠结才问）
           verify, // act 后独立校验，喂给 devReviewer/devRedTeam 判地面真值
           summarize,
           resolveModel: resolver,
+          onActMessage, // 内部 SDK session 流式事件 → SSE node-stream
           hooks,
         });
         // 只有收敛才算成功；未收敛/阻断/出错都落 failed，续跑重算该 TODO

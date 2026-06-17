@@ -141,6 +141,32 @@ describe("runNode · act 分流", () => {
     assert.equal(sendCalled, false);
   });
 
+  it("act 节点把内部流式事件挂上节点上下文转给 deps.onActMessage", async () => {
+    const act: ActSender = async (req) => {
+      req.onMessage?.({ kind: "tool_use", tool: "Bash", input: { command: "ls" } });
+      req.onMessage?.({ kind: "tool_result", ok: true, preview: "out" });
+      return { result: '{"v":1}', durationMs: 1, evidence: emptyEvidence };
+    };
+    const seen: Array<{ nodeId: string; iteration?: number; event: { kind: string } }> = [];
+    await runNode(
+      actNode,
+      { x: 1 },
+      { workspace: { cwd: "/w" }, iteration: 2 },
+      { send: scripted(['{"v":1}']).send, act, onActMessage: (i) => seen.push(i) },
+    );
+    assert.equal(seen.length, 2);
+    assert.equal(seen[0].nodeId, "act-t");
+    assert.equal(seen[0].iteration, 2);
+    assert.equal(seen[0].event.kind, "tool_use");
+    assert.equal(seen[1].event.kind, "tool_result");
+  });
+
+  it("think 节点不转发流式（deps.act 才有 onMessage）", async () => {
+    const seen: unknown[] = [];
+    await runNode(node, { x: 1 }, ctx, { send: scripted(['{"v":1}']).send, onActMessage: (i) => seen.push(i) });
+    assert.equal(seen.length, 0);
+  });
+
   it("act 成功后调 deps.verify(cwd)，verification 挂到结果", async () => {
     const act: ActSender = async () => ({ result: '{"v":1}', durationMs: 1, evidence: emptyEvidence });
     let verifiedCwd = "";

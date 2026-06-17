@@ -53,6 +53,40 @@ export interface ToolApprovalResult {
 /** 审批器：把一次工具使用请求交给外部（飞书卡片 / 终端 / 自动策略）裁决。 */
 export type ToolApprover = (req: ToolApprovalRequest) => Promise<ToolApprovalResult>;
 
+/**
+ * 人工问询请求 —— act 默认全自动（bypassPermissions），不再逐工具弹卡；
+ * 只有 agent 自己"纠结/做不下去"时主动调 ask_human 工具，才发飞书卡片求人裁决。
+ */
+export interface AskHumanRequest {
+  /** agent 的提问（为什么纠结、想确认什么）。 */
+  question: string;
+  /** 可选：给人选的几个选项（卡片渲染成按钮），人点一个即作为答复。 */
+  options?: string[];
+  /** 可选：补充上下文（已尝试过什么）。 */
+  context?: string;
+  cwd?: string;
+  signal?: AbortSignal;
+}
+
+/** 人工问询结果。answer 回填给 agent 作为 ask_human 工具的结果，让它据此继续。 */
+export interface AskHumanResult {
+  answer: string;
+}
+
+/** 问询器：把 agent 的一次"求助"交给外部（飞书卡片）作答。 */
+export type AskHuman = (req: AskHumanRequest) => Promise<AskHumanResult>;
+
+/**
+ * 内部 SDK session 的流式事件 —— act 跑 agentic loop 时实时往外抛，
+ * 让前端呈现"类 GUI Claude Code"的运行中输出。归一化自 SDK 的消息流。
+ */
+export type AgentStreamEvent =
+  | { kind: "text"; delta: string }
+  | { kind: "thinking"; delta: string }
+  | { kind: "tool_use"; tool: string; input: unknown }
+  | { kind: "tool_result"; ok: boolean | null; preview?: string }
+  | { kind: "ask_human"; question: string };
+
 /** agent 一次运行的入参（编排层 Sender 适配器调用）。 */
 export interface AgentSendOptions {
   /** 完整提示词（system + user 合并后的单条消息）。 */
@@ -64,8 +98,15 @@ export interface AgentSendOptions {
   mode?: "plan" | "agent";
   /** 免审批放行的工具（安全只读/编辑类）；其余需批准的工具走 approve 回调。 */
   allowedTools?: string[];
-  /** 工具审批回调；提供时用 permissionMode:"default" + canUseTool 桥接到它。 */
+  /** 工具审批回调；提供时用 permissionMode:"default" + canUseTool 桥接到它（think/旧路径用）。 */
   approve?: ToolApprover;
+  /**
+   * 人工问询回调；提供时 act 注入 ask_human 工具，agent 纠结时主动调它发飞书卡片求人。
+   * 与 approve 互斥：act 默认全自动（bypassPermissions），靠 ask_human 而非逐工具审批。
+   */
+  askHuman?: AskHuman;
+  /** 内部 SDK session 流式事件回调（text/tool_use/tool_result）；act 据此实时推前端。 */
+  onMessage?: (event: AgentStreamEvent) => void;
   /** think 节点专用：禁掉一切改文件/执行类工具（Edit/Write/Bash…），保证只读无副作用。 */
   readOnly?: boolean;
 }

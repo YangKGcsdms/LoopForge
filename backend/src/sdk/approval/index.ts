@@ -5,7 +5,7 @@
 import { getFeishuConfig } from "../../config/feishu.js";
 import { createFeishuApprover, type FeishuApprover, type FeishuApproverConfig } from "./feishuApprover.js";
 import { denyApprover } from "./policy.js";
-import type { ToolApprover } from "../types.js";
+import type { AskHuman, ToolApprover } from "../types.js";
 
 export { autoApprover, denyApprover } from "./policy.js";
 export { createFeishuApprover, sendFeishuTest } from "./feishuApprover.js";
@@ -46,4 +46,13 @@ export async function runtimeApprover(): Promise<ToolApprover> {
     console.log("[approval] 飞书审批已启用/更新，长连接已起");
   }
   return current.approver.approve;
+}
+
+/**
+ * 运行时问询器：配了飞书则复用同一长连接的 ask（agent 纠结时发问询卡）；
+ * 没配则返回 undefined —— act 不注入 ask_human 工具，纯全自动跑，不阻塞。
+ */
+export async function runtimeAsker(): Promise<AskHuman | undefined> {
+  await runtimeApprover(); // 复用同一套配置指纹/长连接装配逻辑
+  return current?.approver.ask;
 }

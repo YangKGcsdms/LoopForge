@@ -11,9 +11,23 @@
 
 import type { ActSender, Sender } from "./run.js";
 
-/** dryRun 用的 mock act-sender：套 mock send，返回空证据（演示链路用，不真改文件）。 */
+/**
+ * dryRun 用的 mock act-sender：套 mock send，返回空证据（演示链路用，不真改文件）。
+ * 若 req 带 onMessage，模拟一段"类 Claude Code session"的流式事件（思考→读文件→改文件→跑测试），
+ * 让前端在 dryRun 下也能看到运行中节点的实时输出效果。
+ */
 export function makeMockActSender(send: Sender): ActSender {
   return async (req) => {
+    const taskId = req.user.match(/子任务\[([^\]]+)\]/)?.[1] ?? "T?";
+    const dir = taskId.toLowerCase();
+    req.onMessage?.({ kind: "thinking", delta: `分析子任务 ${taskId}，定位要改的文件…` });
+    req.onMessage?.({ kind: "tool_use", tool: "Read", input: { file_path: `src/${dir}/index.ts` } });
+    req.onMessage?.({ kind: "tool_result", ok: true, preview: "// 现有实现 …" });
+    req.onMessage?.({ kind: "text", delta: `实现 ${taskId} 核心逻辑，并补测试。` });
+    req.onMessage?.({ kind: "tool_use", tool: "Edit", input: { file_path: `src/${dir}/index.ts` } });
+    req.onMessage?.({ kind: "tool_result", ok: true, preview: "Edited 1 file" });
+    req.onMessage?.({ kind: "tool_use", tool: "Bash", input: { command: "npm test" } });
+    req.onMessage?.({ kind: "tool_result", ok: true, preview: "tests passed" });
     const r = await send({ system: req.system, user: req.user, model: req.model, cwd: req.cwd, tools: req.tools });
     return { ...r, evidence: { toolCalls: [], filesTouched: [], bashRuns: [] } };
   };
