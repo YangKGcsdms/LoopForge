@@ -10,4 +10,5 @@ export * from "./loop.js";
 export * from "./sender.js";
 export * from "./mock.js";
 export * from "./pipeline.js";
+export * from "./checkpoint.js";
 export * from "./nodes/index.js";

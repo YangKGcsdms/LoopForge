@@ -39,7 +39,7 @@ onUnmounted(runState.cleanup);
     <main v-show="activeTab === 'run'" class="px-4 py-5">
       <WorkflowForm :use-run-state="runState" @go-config="activeTab = 'config'" />
       <div class="mt-6">
-        <WorkflowResults :use-run-state="runState" />
+        <WorkflowResults :use-run-state="runState" @resume="runState.resumeRun" />
       </div>
     </main>
 

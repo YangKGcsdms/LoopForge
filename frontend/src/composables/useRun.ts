@@ -36,16 +36,24 @@ export interface UseRunState {
   difficulty: Ref<{ value: string; reason: string | null } | null>;
   routing: Ref<Record<string, string> | null>;
   finalDone: Ref<{ todos: number; developed: number; decompose: string } | null>;
+  /** 当前运行 id（后端 run-started 事件回传），用于断点续跑。 */
+  runId: Ref<string>;
+}
+
+export interface RunParams {
+  requirement: string;
+  goal: string;
+  provider: string;
+  dryRun: boolean;
+  cwd?: string;
+  /** 续跑已有运行 id；不传则新建。 */
+  resume?: string;
 }
 
 export interface UseRunActions {
-  startRun: (params: {
-    requirement: string;
-    goal: string;
-    provider: string;
-    dryRun: boolean;
-    cwd?: string;
-  }) => void;
+  startRun: (params: RunParams) => void;
+  /** 用上次参数 + 当前 runId 断点续跑。 */
+  resumeRun: () => void;
   cleanup: () => void;
 }
 
@@ -56,6 +64,8 @@ export function useRun(): UseRunState & UseRunActions {
   const difficulty = ref<{ value: string; reason: string | null } | null>(null);
   const routing = ref<Record<string, string> | null>(null);
   const finalDone = ref<{ todos: number; developed: number; decompose: string } | null>(null);
+  const runId = ref("");
+  let lastParams: RunParams | null = null;
 
   let es: EventSource | null = null;
   const queue: LiveItem[] = [];
@@ -97,14 +107,9 @@ export function useRun(): UseRunState & UseRunActions {
     }
   }
 
-  function startRun(params: {
-    requirement: string;
-    goal: string;
-    provider: string;
-    dryRun: boolean;
-    cwd?: string;
-  }) {
+  function startRun(params: RunParams) {
     cleanup();
+    lastParams = params;
     error.value = "";
     live.value = [];
     difficulty.value = null;
@@ -114,6 +119,8 @@ export function useRun(): UseRunState & UseRunActions {
     pending = null;
     seq = 0;
     running.value = true;
+    // 续跑时保留已知 runId；新跑清空，等 run-started 回传。
+    if (!params.resume) runId.value = "";
 
     const queryParams = new URLSearchParams({
       requirement: params.requirement,
@@ -122,8 +129,18 @@ export function useRun(): UseRunState & UseRunActions {
       dryRun: String(params.dryRun),
     });
     if (params.cwd?.trim()) queryParams.set("cwd", params.cwd.trim());
+    if (params.resume) queryParams.set("resume", params.resume);
 
     es = new EventSource(`/api/run/pipeline/stream?${queryParams.toString()}`);
+
+    es.addEventListener("run-started", (e) => {
+      try {
+        const d = JSON.parse((e as MessageEvent).data);
+        if (d.runId) runId.value = d.runId;
+      } catch (err) {
+        console.error("Failed to parse run-started event", err);
+      }
+    });
 
     es.addEventListener("difficulty", (e) => {
       try {
@@ -215,6 +232,11 @@ export function useRun(): UseRunState & UseRunActions {
     });
   }
 
+  function resumeRun() {
+    if (!lastParams || !runId.value) return;
+    startRun({ ...lastParams, resume: runId.value });
+  }
+
   return {
     running,
     error,
@@ -222,7 +244,9 @@ export function useRun(): UseRunState & UseRunActions {
     difficulty,
     routing,
     finalDone,
+    runId,
     startRun,
+    resumeRun,
     cleanup,
   };
 }

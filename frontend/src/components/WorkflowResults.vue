@@ -11,6 +11,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const emit = defineEmits<{ resume: [] }>();
 
 // 根据 status 映射到 StatusBadge 需要的类型
 const nodeStatusMap: Record<string, "completed" | "error"> = {
@@ -95,6 +96,14 @@ const isEmptyResult = computed(() => {
         <h3 class="text-sm font-semibold text-rose-900">运行出错</h3>
         <p class="mt-1 whitespace-pre-wrap text-sm text-rose-800">{{ props.useRunState.error.value }}</p>
         <p class="mt-2 text-xs text-rose-700">错误已捕获，不会阻塞后续运行；已产出的内容仍保留在下方。</p>
+        <button
+          v-if="props.useRunState.runId.value && !props.useRunState.running.value"
+          type="button"
+          class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
+          @click="emit('resume')"
+        >
+          ↻ 断点续跑（已成功步骤不重算）
+        </button>
       </div>
     </div>
 
