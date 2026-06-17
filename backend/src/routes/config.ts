@@ -15,15 +15,20 @@ configRouter.get("/preferences", async (_req, res) => {
   res.json(await getPreferences());
 });
 
-/** 更新用户偏好（目前仅 provider）。落库持久化。 */
+/** 更新用户偏好（provider + 上次提交的输入草稿）。落库持久化。 */
 configRouter.put("/preferences", async (req, res) => {
-  const { provider } = req.body ?? {};
+  const { provider, lastRequirement, lastGoal, lastCwd } = req.body ?? {};
+  const patch: Record<string, string> = {};
   if (provider !== undefined) {
     if (typeof provider !== "string" || !getProvider(provider)) {
       return res.status(400).json({ error: "unsupported_provider", provider });
     }
+    patch.provider = provider;
   }
-  res.json(await setPreferences(provider !== undefined ? { provider } : {}));
+  if (typeof lastRequirement === "string") patch.lastRequirement = lastRequirement;
+  if (typeof lastGoal === "string") patch.lastGoal = lastGoal;
+  if (typeof lastCwd === "string") patch.lastCwd = lastCwd;
+  res.json(await setPreferences(patch));
 });
 
 /** 读取某 Provider 的 SK 配置状态（脱敏）。 */

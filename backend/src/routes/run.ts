@@ -101,6 +101,30 @@ runRouter.get("/history", async (_req, res) => {
   res.json({ runs: await checkpointStore.listRuns() });
 });
 
+interface DetailSubtask {
+  id: string;
+  title: string;
+  estimateHours: number;
+  acceptance: string;
+}
+
+/** 单次运行详情：GET /api/run/detail/:runId —— 含任务列表与验收标准。 */
+runRouter.get("/detail/:runId", async (req, res) => {
+  const file = await checkpointStore.loadRun(req.params.runId);
+  if (!file) return res.status(404).json({ error: "not_found" });
+  const decompose = file.steps["decompose"]?.value as { subtasks?: DetailSubtask[] } | undefined;
+  const subtasks = decompose?.subtasks ?? [];
+  const todos = subtasks.map((s) => ({
+    id: s.id,
+    title: s.title,
+    estimateHours: s.estimateHours,
+    acceptance: s.acceptance,
+    status: (file.steps[`dev:${s.id}`]?.status as string | undefined) ?? "pending",
+  }));
+  const difficulty = (file.steps["assess"]?.value as { difficulty?: string; reason?: string | null } | undefined) ?? null;
+  res.json({ manifest: file.manifest, difficulty, todos });
+});
+
 /** 流式：GET /api/run/pipeline/stream（EventSource） */
 runRouter.get("/pipeline/stream", async (req, res) => {
   res.set({

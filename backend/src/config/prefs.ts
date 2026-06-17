@@ -11,6 +11,12 @@ import { env } from "../env.js";
 export interface Preferences {
   /** 当前选择的 SDK / Provider（cursor | claude-agent | …）。 */
   provider: string;
+  /** 上次提交的需求（下次打开自动回填）。 */
+  lastRequirement?: string;
+  /** 上次提交的最终目标。 */
+  lastGoal?: string;
+  /** 上次选择的工作目录 cwd。 */
+  lastCwd?: string;
 }
 
 const defaults: Preferences = { provider: "cursor" };

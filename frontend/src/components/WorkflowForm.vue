@@ -48,6 +48,12 @@ async function loadSkStatus() {
 
 function handleStartRun() {
   if (skMissing.value) return;
+  // 提交即把输入与所选目录落库，下次打开自动回填
+  void api.savePreferences({
+    lastRequirement: requirement.value,
+    lastGoal: goal.value,
+    lastCwd: cwd.value,
+  });
   props.useRunState.startRun({
     requirement: requirement.value,
     goal: goal.value,
@@ -66,6 +72,15 @@ watch(dryRun, (val) => {
 onMounted(async () => {
   await loadProvider();
   void loadSkStatus();
+  // 回填上次提交的输入与目录
+  try {
+    const prefs = await api.getPreferences();
+    if (prefs.lastRequirement) requirement.value = prefs.lastRequirement;
+    if (prefs.lastGoal) goal.value = prefs.lastGoal;
+    if (prefs.lastCwd) cwd.value = prefs.lastCwd;
+  } catch {
+    // 忽略：拿不到偏好时保留默认值
+  }
 });
 </script>
 

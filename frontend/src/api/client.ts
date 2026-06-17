@@ -85,6 +85,33 @@ async function http<T>(url: string, init?: RequestInit): Promise<T> {
 
 export interface Preferences {
   provider: string;
+  lastRequirement?: string;
+  lastGoal?: string;
+  lastCwd?: string;
+}
+
+export interface RunHistoryItem {
+  runId: string;
+  input: { requirement: string; goal: string };
+  provider: string;
+  cwd?: string;
+  status: "running" | "done" | "failed" | "aborted";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RunDetailTodo {
+  id: string;
+  title: string;
+  estimateHours: number;
+  acceptance: string;
+  status: string;
+}
+
+export interface RunDetail {
+  manifest: RunHistoryItem;
+  difficulty: { difficulty?: string; reason?: string | null } | null;
+  todos: RunDetailTodo[];
 }
 
 export interface FsEntry {
@@ -131,6 +158,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ provider, apiKey }),
     }),
+
+  getHistory: () => http<{ runs: RunHistoryItem[] }>("/api/run/history"),
+
+  getRunDetail: (runId: string) =>
+    http<RunDetail>(`/api/run/detail/${encodeURIComponent(runId)}`),
 
   listDir: (path?: string) =>
     http<FsListResult>(`/api/fs/list${path ? `?path=${encodeURIComponent(path)}` : ""}`),

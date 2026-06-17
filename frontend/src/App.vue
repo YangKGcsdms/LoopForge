@@ -6,6 +6,7 @@ import SkConfig from "./components/SkConfig.vue";
 import RoutePool from "./components/RoutePool.vue";
 import WorkflowForm from "./components/WorkflowForm.vue";
 import WorkflowResults from "./components/WorkflowResults.vue";
+import HistoryView from "./components/HistoryView.vue";
 import AboutView from "./components/AboutView.vue";
 import { useRun } from "./composables/useRun";
 import { useProvider } from "./composables/useProvider";
@@ -19,6 +20,7 @@ const activeTab = ref<TabKey>("run");
 
 const tabTitle: Record<TabKey, string> = {
   run: "运行",
+  history: "历史",
   config: "配置",
   about: "关于",
 };
@@ -41,6 +43,11 @@ onUnmounted(runState.cleanup);
       <div class="mt-6">
         <WorkflowResults :use-run-state="runState" @resume="runState.resumeRun" />
       </div>
+    </main>
+
+    <!-- 历史 Tab：v-if 使每次切入都重新拉取最新记录 -->
+    <main v-if="activeTab === 'history'">
+      <HistoryView />
     </main>
 
     <!-- 配置 Tab：引擎选择 + SK 配置 + 路由卡片（跟随所选引擎） -->

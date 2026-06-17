@@ -1,5 +1,8 @@
-import { ref, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 import { renderNodeOutput } from "../lib/format";
+
+/** 展示状态快照的本地存储键：用于刷新/H5 重开后还原运行结果。 */
+const SNAPSHOT_KEY = "loopforge:run-snapshot";
 
 interface Subtask {
   id: string;
@@ -66,6 +69,69 @@ export function useRun(): UseRunState & UseRunActions {
   const finalDone = ref<{ todos: number; developed: number; decompose: string } | null>(null);
   const runId = ref("");
   let lastParams: RunParams | null = null;
+
+  // ── 刷新/H5 重开还原：启动时从 localStorage 恢复上次展示快照 ──
+  hydrateFromSnapshot();
+
+  function hydrateFromSnapshot() {
+    try {
+      const raw = localStorage.getItem(SNAPSHOT_KEY);
+      if (!raw) return;
+      const snap = JSON.parse(raw) as {
+        live?: LiveItem[];
+        difficulty?: typeof difficulty.value;
+        routing?: typeof routing.value;
+        finalDone?: typeof finalDone.value;
+        runId?: string;
+        error?: string;
+        wasRunning?: boolean;
+        lastParams?: RunParams | null;
+      };
+      // 还原节点时直接显示完整文本，不再重播打字机
+      live.value = (snap.live ?? []).map((it) =>
+        it.kind === "node" ? { ...it, typed: it.full } : it,
+      );
+      difficulty.value = snap.difficulty ?? null;
+      routing.value = snap.routing ?? null;
+      finalDone.value = snap.finalDone ?? null;
+      runId.value = snap.runId ?? "";
+      lastParams = snap.lastParams ?? null;
+      // 运行态一律复位（SSE 连接已随刷新断开）；若上次确实在跑且没出结果，给个提示
+      running.value = false;
+      if (snap.error) error.value = snap.error;
+      else if (snap.wasRunning && !snap.finalDone)
+        error.value = "页面已刷新，实时连接中断。点「断点续跑」可从已完成步骤继续。";
+    } catch {
+      // 快照损坏忽略
+    }
+  }
+
+  function persistSnapshot() {
+    try {
+      const snap = {
+        live: live.value.map((it) =>
+          it.kind === "node" ? { ...it, typed: it.full } : it,
+        ),
+        difficulty: difficulty.value,
+        routing: routing.value,
+        finalDone: finalDone.value,
+        runId: runId.value,
+        error: error.value,
+        wasRunning: running.value,
+        lastParams,
+      };
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+    } catch {
+      // localStorage 不可用（隐私模式/超额）忽略
+    }
+  }
+
+  // 展示状态有实质变化就存快照（不逐字存，typed 还原时统一置满）
+  watch(
+    [() => live.value.length, difficulty, routing, finalDone, runId, running, error],
+    persistSnapshot,
+    { deep: true },
+  );
 
   let es: EventSource | null = null;
   const queue: LiveItem[] = [];
