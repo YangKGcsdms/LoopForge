@@ -14,7 +14,8 @@ export interface WorkflowForm {
 
 export function useWorkflowForm(): WorkflowForm {
   return {
-    provider: ref("cursor"),
+    // 默认走 Claude Code SDK（cursor 已冻结）；挂载时按它加载模型池。
+    provider: ref("claude-agent"),
     requirement: ref("检查当前项目新版本的 oa-system-ui 前台权限系统"),
     goal: ref("评估 RBAC/ABAC 权限系统进展，缺的补齐，确保能推进"),
     cwd: ref(""),

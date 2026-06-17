@@ -55,7 +55,7 @@ watch(
     <!-- 内容区（三页常驻、Tab 切换显隐，保活状态与滚动位置） -->
     <main class="relative min-h-0 flex-1 overflow-hidden">
       <div v-show="tab === 'config'" class="h-full overflow-y-auto px-4 py-5">
-        <SkConfig />
+        <SkConfig :form-state="formState" />
       </div>
       <div v-show="tab === 'run'" class="h-full">
         <MobileForm :run-state="runState" :form-state="formState" />

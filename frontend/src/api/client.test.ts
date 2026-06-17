@@ -22,7 +22,7 @@ describe("api client", () => {
       return json({ source: "fallback", models: [] });
     });
     const r = await api.getModels();
-    assert.match(url, /\/api\/models\?provider=cursor/);
+    assert.match(url, /\/api\/models\?provider=claude-agent/);
     assert.equal(r.source, "fallback");
   });
 

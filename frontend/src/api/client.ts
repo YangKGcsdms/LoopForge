@@ -167,7 +167,7 @@ export const api = {
   listDir: (path?: string) =>
     http<FsListResult>(`/api/fs/list${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 
-  getModels: (provider = "cursor") =>
+  getModels: (provider = "claude-agent") =>
     http<ModelsResponse>(`/api/models?provider=${encodeURIComponent(provider)}`),
 
   runPipeline: (body: RunPipelineBody) =>
