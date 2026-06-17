@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { join } from "node:path";
 import { getApiKey } from "../config/store.js";
+import { env } from "../env.js";
 import {
   runPipeline,
   makeMockSender,
@@ -7,6 +9,8 @@ import {
   senderFor,
   actSenderFor,
   makeVerifier,
+  persistHook,
+  JsonlNodeRunStore,
   type ActSender,
   type NodeHook,
   type Sender,
@@ -19,6 +23,17 @@ import { runtimeApprover, SAFE_TOOLS } from "../sdk/approval/index.js";
 export const runRouter = Router();
 
 type Deps = { send: Sender; act?: ActSender; verify?: Verifier };
+
+/**
+ * 落盘审计单例 —— 真跑的每条 NodeRunRecord append 到 .data/node-runs.jsonl，
+ * 攒成可扫时间线 + 评估蒸馏的原料。dryRun（mock 数据）不落盘，免污染 eval 数据集。
+ */
+let runStore: JsonlNodeRunStore | undefined;
+function persistHooks(dryRun: boolean): NodeHook[] {
+  if (dryRun) return [];
+  runStore ??= new JsonlNodeRunStore(join(env.dataDir, "node-runs.jsonl"));
+  return [persistHook(runStore)];
+}
 
 /**
  * 装配执行原语：think(send) + act(act-runner，绑定飞书审批) + verify(独立校验)。
@@ -92,6 +107,7 @@ runRouter.post("/pipeline", async (req, res) => {
     summarize: d.send,
     providerId: provider,
     workspace,
+    hooks: persistHooks(dryRun), // 真跑落盘审计；dryRun 不落
   });
   res.json({ dryRun, ...result });
 });
@@ -154,7 +170,7 @@ runRouter.get("/pipeline/stream", async (req, res) => {
       summarize: d.send,
       providerId: provider,
       workspace,
-      hooks: [streamHook],
+      hooks: [...persistHooks(dryRun), streamHook], // 真跑落盘 + SSE 推流
       onEvent: send,
     });
   } catch (e) {
