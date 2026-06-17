@@ -1,4 +1,6 @@
 import type {
+  AgentActOptions,
+  AgentActResult,
   AgentSendOptions,
   AgentSendResult,
   ProviderInfo,
@@ -36,8 +38,15 @@ export interface SdkProvider {
   listModels(apiKey: string): Promise<SdkModelInfo[]>;
 
   /**
-   * 跑一次 agent：在指定工作目录下发一条提示词，等待终态，返回结构化结果。
-   * 编排层的 Sender 适配器包的就是它（Agent.create({local:{cwd}}) → send → wait）。
+   * think 原语：在指定工作目录下发一条提示词，单发、只读、等终态返回结构化字符串。
+   * 编排层 think 节点（plan/decompose/各 reviewer）的 Sender 包的就是它。
    */
   send(opts: AgentSendOptions): Promise<AgentSendResult>;
+
+  /**
+   * act 原语（可选，仅有真工具循环的 provider 实现）：开真工具跑 agentic loop，
+   * canUseTool 桥接审批，观测消息流聚合 evidence。编排层 act 节点（devStep/testWriter）用。
+   * provider 未实现时，编排层把该 act 节点降级走 send（无证据），并应告警。
+   */
+  act?(opts: AgentActOptions): Promise<AgentActResult>;
 }

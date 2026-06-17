@@ -1,45 +1,47 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { api, type CatalogModel } from "../api/client";
+import { computed, onMounted } from "vue";
 import { tierClass } from "../lib/format";
 import { type UseRunState, type UseRunActions } from "../composables/useRun";
-import BaseButton from "./BaseButton.vue";
+import { type WorkflowForm } from "../composables/useWorkflowForm";
+import { useModels } from "../composables/useModels";
 import BaseInput from "./BaseInput.vue";
-import BaseCard from "./BaseCard.vue";
-import BaseSelect from "./BaseSelect.vue";
 import BaseTag from "./BaseTag.vue";
 
 interface Props {
   useRunState: UseRunState & UseRunActions;
+  formState: WorkflowForm;
 }
 
 const props = defineProps<Props>();
+// 共享表单字段（App 持有，与 H5 版同一实例）。
+const { provider, requirement, goal, cwd, dryRun } = props.formState;
 
-const models = ref<CatalogModel[]>([]);
-const modelSource = ref("");
-const modelNote = ref("");
-const poolRouting = ref<Record<string, string> | null>(null);
-// 模型加载错误独立于运行错误（运行错误归 useRun.error），避免两者互相覆盖。
-const loadError = ref("");
+const { models, modelSource, modelNote, poolRouting, loadError, load } = useModels();
 
-const provider = ref("cursor");
-const requirement = ref("检查当前项目新版本的 oa-system-ui 前台权限系统");
-const goal = ref("评估 RBAC/ABAC 权限系统进展，缺的补齐，确保能推进");
-const cwd = ref("");
-const dryRun = ref(true);
+const engines = [
+  { id: "cursor", name: "Cursor SDK" },
+  { id: "claude-agent", name: "Claude Agent SDK" },
+];
 
-async function loadModels() {
-  loadError.value = "";
-  try {
-    const res = await api.getModels(provider.value);
-    models.value = res.models;
-    modelSource.value = res.source;
-    modelNote.value = res.note ?? "";
-    poolRouting.value = res.routing ?? null;
-  } catch (e) {
-    loadError.value = `加载模型失败：${(e as Error).message}`;
-  }
+function selectProvider(p: string) {
+  if (provider.value === p) return;
+  provider.value = p;
+  void load(p);
 }
+
+const routingLabels: Record<string, string> = {
+  plan: "出方案",
+  control: "管控",
+  execute: "执行",
+  validate: "校验",
+  review: "评审",
+  test: "测试",
+};
+const routingRows = computed(() =>
+  poolRouting.value
+    ? Object.entries(poolRouting.value).map(([key, value]) => ({ key, label: routingLabels[key] ?? key, value }))
+    : [],
+);
 
 function handleStartRun() {
   props.useRunState.startRun({
@@ -51,96 +53,137 @@ function handleStartRun() {
   });
 }
 
-onMounted(loadModels);
+onMounted(() => void load(provider.value));
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- 路由池：跟随所选引擎（两套策略各一套） -->
-    <BaseCard variant="default" size="md">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-lg font-semibold">
-          路由池 · {{ provider === "cursor" ? "Cursor SDK" : "Claude Agent SDK" }}
-        </h2>
-        <div class="flex flex-wrap items-center gap-2">
-          <BaseSelect
-            v-model="provider"
-            size="sm"
-            @change="loadModels"
-          >
-            <option value="cursor">Cursor SDK</option>
-            <option value="claude-agent">Claude Agent SDK</option>
-          </BaseSelect>
-          <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-            {{ modelSource === "live" ? "实时可用性" : "可用性未知" }}
-          </span>
-        </div>
-      </div>
-
-      <div v-if="poolRouting" class="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-        <span>出方案 <span class="font-mono text-slate-900">{{ poolRouting.plan }}</span></span>
-        <span>执行 <span class="font-mono text-slate-900">{{ poolRouting.execute }}</span></span>
-        <span>评审 <span class="font-mono text-slate-900">{{ poolRouting.review }}</span></span>
-        <span>测试 <span class="font-mono text-slate-900">{{ poolRouting.test }}</span></span>
-      </div>
-
-      <div class="flex flex-wrap gap-2">
-        <span
-          v-for="m in models"
-          :key="m.id"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm"
-          :class="m.available === false ? 'border-rose-200 bg-rose-50 opacity-60' : 'border-slate-200'"
-        >
-          <span class="text-slate-800">{{ m.displayName }}</span>
-          <BaseTag :color="tierClass(m.tier)">{{ m.tier }}</BaseTag>
-          <BaseTag v-if="m.available === false" color="bg-rose-100 text-rose-600">禁用</BaseTag>
+  <div class="space-y-10">
+    <!-- ── 引擎 + 路由池 ── -->
+    <section>
+      <div class="section-label mb-4">
+        <span class="ornament">·</span>
+        <span class="caps">编码引擎 · Engine</span>
+        <span class="rule"></span>
+        <span class="label-caps shrink-0 normal-case tracking-wide">
+          {{ modelSource === "live" ? "实时可用" : "可用性未知" }}
         </span>
       </div>
-      <p class="mt-2 text-xs text-slate-600">
-        按用途路由，Cursor 与 Claude 各一套、互不相同；切上方引擎即换池与策略。
-        <span v-if="modelNote"> · {{ modelNote }}</span>
+
+      <!-- 引擎段控件：terracotta 单点聚焦 -->
+      <div class="grid grid-cols-2 gap-3">
+        <button
+          v-for="e in engines"
+          :key="e.id"
+          type="button"
+          :class="[
+            'flex items-center gap-2.5 rounded-md border px-3.5 py-3 text-left transition-colors',
+            provider === e.id ? 'border-brand bg-brand-bg' : 'border-hair hover:border-hair-strong',
+          ]"
+          @click="selectProvider(e.id)"
+        >
+          <span
+            :class="['h-1.5 w-1.5 rounded-full', provider === e.id ? 'bg-brand' : 'bg-ink4']"
+          ></span>
+          <span :class="['text-sm font-medium', provider === e.id ? 'text-ink' : 'text-ink2']">{{ e.name }}</span>
+        </button>
+      </div>
+
+      <!-- 按用途路由：发丝线账本 -->
+      <div class="mt-6">
+        <div class="section-label mb-1">
+          <span class="caps">按用途路由 · Routing</span>
+          <span class="rule"></span>
+        </div>
+        <div v-if="routingRows.length" class="grid grid-cols-2 gap-x-8">
+          <div
+            v-for="row in routingRows"
+            :key="row.key"
+            class="flex items-baseline justify-between gap-3 border-t border-hair-soft py-2.5"
+          >
+            <span class="label-caps tracking-caps">{{ row.label }}</span>
+            <span class="truncate font-mono text-[12px] text-ink">{{ row.value }}</span>
+          </div>
+        </div>
+
+        <!-- 模型池 chips -->
+        <div class="mt-4 flex flex-wrap gap-1.5">
+          <span
+            v-for="m in models"
+            :key="m.id"
+            class="inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[12px]"
+            :class="m.available === false ? 'border-hair-soft text-ink3 opacity-60' : 'border-hair text-ink2'"
+          >
+            <span class="font-mono">{{ m.displayName }}</span>
+            <BaseTag :color="tierClass(m.tier)">{{ m.tier }}</BaseTag>
+            <BaseTag v-if="m.available === false" color="tone-down">禁用</BaseTag>
+          </span>
+        </div>
+        <p class="mt-3 text-[12px] leading-relaxed text-ink3">
+          Cursor 与 Claude 各一套、互不相同；切引擎即换池与策略。
+          <span v-if="modelNote"> · {{ modelNote }}</span>
+        </p>
+        <p v-if="loadError" class="mt-2 text-[12px] text-down">{{ loadError }}</p>
+      </div>
+    </section>
+
+    <!-- ── 运行表单 ── -->
+    <section>
+      <p class="kicker mb-2.5">★ Pipeline · 自驱开发</p>
+      <h2 class="font-serif text-[28px] font-light leading-[1.15] tracking-tight text-ink">
+        自驱开发<em class="italic text-brand">流水线</em>。
+      </h2>
+      <p class="mt-2 max-w-md font-serif text-[15px] font-light leading-relaxed text-ink2">
+        难度评估 → 出方案 → 拆解成 N 个 3~5 工时任务 → 每个 TODO <em class="italic text-ink">自循环</em>开发（开发→评审→矫正→通过）。
       </p>
-      <p v-if="loadError" class="mt-2 text-xs text-rose-600">{{ loadError }}</p>
-    </BaseCard>
 
-    <!-- 运行表单 -->
-    <BaseCard variant="default" size="md">
-      <h2 class="mb-1 text-lg font-semibold">自驱开发流水线</h2>
-      <p class="mb-5 text-sm text-slate-500">
-        难度评估 → 出方案 → 拆解成 N 个 3~5 工时任务 → 每个 TODO 自循环开发（开发→评审→矫正→通过）。
-      </p>
+      <div class="mt-6 space-y-5">
+        <div>
+          <label class="label-caps mb-2 block">需求</label>
+          <textarea
+            v-model="requirement"
+            rows="3"
+            class="w-full rounded-md border border-hair-strong bg-surface px-3 py-2.5 text-sm leading-relaxed text-ink transition-colors"
+          ></textarea>
+        </div>
 
-      <label class="mb-1.5 block text-sm font-medium text-slate-800">需求</label>
-      <textarea
-        v-model="requirement"
-        rows="2"
-        class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 transition-colors duration-150 placeholder:text-slate-500 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2"
-      ></textarea>
+        <div>
+          <label class="label-caps mb-2 block">最终目标</label>
+          <BaseInput v-model="goal" fullWidth />
+        </div>
 
-      <label class="mb-1.5 block text-sm font-medium text-slate-800">最终目标</label>
-      <BaseInput v-model="goal" class="mb-4" fullWidth />
+        <div>
+          <label class="label-caps mb-2 block">工作目录 cwd（可选）</label>
+          <BaseInput
+            v-model="cwd"
+            placeholder="/path/to/target-repo —— agent 在这个目录下开发代码"
+            class="font-mono"
+            fullWidth
+          />
+        </div>
 
-      <label class="mb-1.5 block text-sm font-medium text-slate-800">工作目录 cwd（可选）</label>
-      <BaseInput
-        v-model="cwd"
-        placeholder="/path/to/target-repo —— agent 在这个目录下开发代码"
-        class="mb-4 font-mono"
-        fullWidth
-      />
-
-      <div class="flex items-center justify-between">
-        <label class="flex items-center gap-2 text-sm text-slate-800">
-          <input v-model="dryRun" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+        <label class="flex items-center gap-2.5 text-sm text-ink2">
+          <input v-model="dryRun" type="checkbox" class="h-4 w-4" />
           dryRun（内置 mock，无需 SDK/SK）
         </label>
-        <BaseButton :disabled="props.useRunState.running.value" @click="handleStartRun">
-          {{ props.useRunState.running.value ? "运行中…" : "评估并自驱运行" }}
-        </BaseButton>
       </div>
 
-      <div v-if="props.useRunState.error.value" class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <!-- 编辑感 CTA -->
+      <button
+        type="button"
+        :disabled="props.useRunState.running.value"
+        class="mt-6 flex h-[52px] w-full items-center justify-center gap-3 rounded-md border border-brand bg-brand font-serif text-[17px] text-[#faf5f0] transition-colors hover:bg-brand-ink disabled:cursor-not-allowed disabled:opacity-50"
+        @click="handleStartRun"
+      >
+        <span>{{ props.useRunState.running.value ? "运行中…" : "评估并自驱运行" }}</span>
+        <span v-if="!props.useRunState.running.value" class="font-light italic">→</span>
+      </button>
+
+      <div
+        v-if="props.useRunState.error.value"
+        class="mt-4 rounded-md border border-hair bg-down-bg px-4 py-3 text-[13px] text-down"
+      >
         {{ props.useRunState.error.value }}
       </div>
-    </BaseCard>
+    </section>
   </div>
 </template>

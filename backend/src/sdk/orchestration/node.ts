@@ -22,6 +22,44 @@ export type NodePurpose = "plan" | "control" | "execute" | "validate" | "review"
 /** 规划 or 实施；产出节点常 plan→agent。 */
 export type Mode = "plan" | "agent";
 
+/**
+ * 执行轴（关键切分）：think = 只读单发、纯 prompt→结构化 JSON（plan/decompose/各 reviewer）；
+ * act = 开真工具 + 审批 + 证据捕获（devStep/testWriter）。省略默认 think。
+ */
+export type Exec = "think" | "act";
+
+/** act 节点采集的真实证据（镜像 sdk AgentEvidence，编排层保持解耦）。 */
+export interface ActEvidence {
+  toolCalls: Array<{ tool: string; input: unknown; ok: boolean | null; resultPreview?: string }>;
+  /** 从 Edit/Write 等工具入参聚合的改动文件（agent 视角，参考）。 */
+  filesTouched: string[];
+  /** Bash 调用：命令 + 是否成功 + 输出预览。 */
+  bashRuns: Array<{ command: string; ok: boolean | null; output?: string }>;
+}
+
+/** 编排层独立跑的单条校验结果。 */
+export interface VerificationCheck {
+  name: string;
+  command: string;
+  exitCode: number;
+  ok: boolean;
+  output: string;
+}
+
+/**
+ * 独立校验结果 —— act 后由编排层在 workspace 里跑 git diff + 配置的 test/typecheck 得到。
+ * 这是 act 评审的「地面真值」，不经 agent，戳穿"自报通过"。
+ */
+export interface Verification {
+  /** git diff 采集的真实改动文件（不信 agent 的 filesTouched）。 */
+  filesChanged: string[];
+  /** git diff --stat 摘要。 */
+  diffStat: string;
+  checks: VerificationCheck[];
+  /** 有校验且全过=true；有校验但有失败=false；没配校验=null（评审不得据此判 done）。 */
+  testsPass: boolean | null;
+}
+
 /** 模型引用，不依赖 @cursor/sdk；落地时映射成 SDK 的 ModelSelection。 */
 export interface ModelRef {
   id: string;
@@ -56,6 +94,10 @@ export interface NodeRunContext {
   priorVerdict?: EvaluatorVerdict;
   /** 事实总线 / 状态库的只读快照，动态上下文的来源。 */
   facts?: Readonly<Record<string, unknown>>;
+  /** 上游 act 节点采集的证据，评审节点的 render 据此判（loop 注入）。 */
+  evidence?: ActEvidence;
+  /** 上游 act 后的独立校验结果，评审的地面真值（loop 注入）。 */
+  verification?: Verification;
 }
 
 /**
@@ -87,6 +129,8 @@ export interface NodeTemplate<I, O> {
   /** 该节点用的模型；省略则用 loop 默认。难活用强模型，铺量用便宜的。 */
   readonly model?: ModelRef;
   readonly mode?: Mode;
+  /** 执行轴：think（默认，只读单发）| act（真工具+审批+证据）。 */
+  readonly exec?: Exec;
   /** 允许的工具 / customTool 名；副作用节点（DB 写入、触发 e2e）挂在这。 */
   readonly tools?: string[];
   /** 契约校验失败时的修复重试上限，默认 2。 */
@@ -136,6 +180,10 @@ export interface NodeResult<O> {
   durationMs: number;
   /** 小模型生成的一句话输出总结，落库用。 */
   summary?: string;
+  /** act 节点：本次采集到的证据。 */
+  evidence?: ActEvidence;
+  /** act 节点：act 后的独立校验结果（地面真值）。 */
+  verification?: Verification;
   /** status==="error" 时的原因。 */
   error?: string;
 }

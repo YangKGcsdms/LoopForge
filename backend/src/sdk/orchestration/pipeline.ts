@@ -3,7 +3,7 @@
  * 与 HTTP 解耦：路由只负责装配 sender/catalog 并把事件透传给 SSE。
  */
 
-import { runNode, type Sender } from "./run.js";
+import { runNode, type ActSender, type Sender, type Verifier } from "./run.js";
 import { runLoop, type LoopSpec } from "./loop.js";
 import {
   difficultyAssessor,
@@ -70,8 +70,12 @@ export interface PipelineInput {
 
 export interface PipelineDeps {
   send: Sender;
+  /** act 节点（devStep/testWriter）执行原语；省略则降级 send（无证据）。 */
+  act?: ActSender;
+  /** act 后独立校验器（git diff + test/typecheck）。 */
+  verify?: Verifier;
   summarize?: Sender;
-  /** 选哪套路由策略：cursor / claude-agent。 */
+  /** 选哪套路由策略：claude-agent（cursor 已冻结）。 */
   providerId: string;
   workspace?: Workspace;
   hooks?: NodeHook[];
@@ -97,7 +101,7 @@ export interface PipelineResult {
 }
 
 export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Promise<PipelineResult> {
-  const { send, summarize, providerId, workspace, hooks = [], onEvent } = deps;
+  const { send, act, verify, summarize, providerId, workspace, hooks = [], onEvent } = deps;
   const emit = (event: string, data: unknown) => onEvent?.(event, data);
 
   // 路由策略先定好（按 provider），难度评估节点也要按它路由模型，否则会用错 provider 的模型。
@@ -145,6 +149,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
     emit("phase", { name: `开发：${task.id} ${task.title}` });
     const dev = await runLoop(devLoopSpec(input.goal), { task }, { workspace }, {
       send,
+      act, // devStep 是 act 节点：真改代码 + 审批 + 证据
+      verify, // act 后独立校验，喂给 devReviewer/devRedTeam 判地面真值
       summarize,
       resolveModel: resolver,
       hooks,

@@ -94,11 +94,17 @@ export async function runLoop<I, O, EI>(
       return { loopId: spec.id, status: "error", iterations: n, output: produced.output, history };
     }
 
+    // act producer 采集的证据 + 独立校验，注入评审 ctx —— 评审判地面真值而非自报。
+    const evalCtx: NodeRunContext = {
+      ...iterCtx,
+      evidence: produced.evidence,
+      verification: produced.verification,
+    };
     const evalInput = spec.toEvalInput(produced.output, input, iterCtx);
     // 主评审 + 对抗评审并行跑；任一节点失败即 loop error。
     const evaluatorNodes = [spec.evaluator, ...(spec.adversaries ?? [])];
     const reviews = await Promise.all(
-      evaluatorNodes.map((ev) => runNode(ev, evalInput, iterCtx, deps)),
+      evaluatorNodes.map((ev) => runNode(ev, evalInput, evalCtx, deps)),
     );
     if (reviews.some((r) => r.status === "error" || r.output === undefined)) {
       return { loopId: spec.id, status: "error", iterations: n, output: produced.output, history };

@@ -8,6 +8,7 @@ export * from "./run.js";
 export * from "./hooks.js";
 export * from "./loop.js";
 export * from "./sender.js";
+export * from "./verify.js";
 export * from "./mock.js";
 export * from "./pipeline.js";
 export * from "./nodes/index.js";

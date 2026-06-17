@@ -9,7 +9,15 @@
  * 每次 makeMockSender() 得到独立计数的实例。
  */
 
-import type { Sender } from "./run.js";
+import type { ActSender, Sender } from "./run.js";
+
+/** dryRun 用的 mock act-sender：套 mock send，返回空证据（演示链路用，不真改文件）。 */
+export function makeMockActSender(send: Sender): ActSender {
+  return async (req) => {
+    const r = await send({ system: req.system, user: req.user, model: req.model, cwd: req.cwd, tools: req.tools });
+    return { ...r, evidence: { toolCalls: [], filesTouched: [], bashRuns: [] } };
+  };
+}
 
 export function makeMockSender(): Sender {
   let decomposeProd = 0;

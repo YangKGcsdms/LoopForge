@@ -66,6 +66,8 @@ export interface AgentSendOptions {
   allowedTools?: string[];
   /** 工具审批回调；提供时用 permissionMode:"default" + canUseTool 桥接到它。 */
   approve?: ToolApprover;
+  /** think 节点专用：禁掉一切改文件/执行类工具（Edit/Write/Bash…），保证只读无副作用。 */
+  readOnly?: boolean;
 }
 
 /** agent 一次运行的结果。 */
@@ -75,4 +77,35 @@ export interface AgentSendResult {
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
   model?: string;
   durationMs: number;
+}
+
+/** act 入参 = send 入参（act 永远开真工具，approve/allowedTools 决定哪些需审批）。 */
+export type AgentActOptions = AgentSendOptions;
+
+/** 一次工具调用的记录（从 tool_use / tool_result 消息流聚合）。 */
+export interface ToolCallRecord {
+  /** 工具名（Claude 大写名：Bash / Edit / Write …）。 */
+  tool: string;
+  input: unknown;
+  /** 结果是否成功（tool_result.is_error 取反）；还没收到结果为 null。 */
+  ok: boolean | null;
+  /** 结果预览（截断），调试/留痕。 */
+  resultPreview?: string;
+}
+
+/**
+ * act 证据 —— agent 在本次运行里实际做了什么（地面真值的一半，另一半是 verify 的独立校验）。
+ * 注意：bashRuns 的 ok 是 agent 工具回报，仍是"agent 自己说的"，最终信号以编排层 verify 为准。
+ */
+export interface AgentEvidence {
+  toolCalls: ToolCallRecord[];
+  /** 从 Edit/Write/MultiEdit/NotebookEdit 的 file_path 聚合的改动文件。 */
+  filesTouched: string[];
+  /** Bash 调用：命令 + 是否成功 + 输出预览。 */
+  bashRuns: Array<{ command: string; ok: boolean | null; output?: string }>;
+}
+
+/** act 一次运行的结果 = send 结果 + 采集到的证据。 */
+export interface AgentActResult extends AgentSendResult {
+  evidence: AgentEvidence;
 }

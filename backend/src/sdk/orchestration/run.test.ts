@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { runNode, type Sender } from "./run.js";
+import { runNode, type ActSender, type Sender, type Verifier } from "./run.js";
 import { defineContract, type ContractResult } from "./contract.js";
-import type { NodeHook, NodeRunContext, NodeTemplate } from "./node.js";
+import type { ActEvidence, NodeHook, NodeRunContext, NodeTemplate } from "./node.js";
 
 interface Out {
   v: number;
@@ -120,5 +120,57 @@ describe("runNode", () => {
     };
     await runNode(node, { x: 1 }, { workspace: { cwd: "/tmp/x" } }, { send });
     assert.equal(usedCwd, "/tmp/x");
+  });
+});
+
+const actNode: NodeTemplate<{ x: number }, Out> = { ...node, id: "act-t", exec: "act" };
+const emptyEvidence: ActEvidence = { toolCalls: [], filesTouched: [], bashRuns: [] };
+
+describe("runNode · act 分流", () => {
+  it("exec=act 且有 deps.act：走 act 不走 send，evidence 挂到结果", async () => {
+    const ev: ActEvidence = { toolCalls: [{ tool: "Edit", input: {}, ok: true }], filesTouched: ["a.ts"], bashRuns: [] };
+    const act: ActSender = async () => ({ result: '{"v":1}', durationMs: 1, evidence: ev });
+    let sendCalled = false;
+    const send: Sender = async () => {
+      sendCalled = true;
+      return { result: "x", durationMs: 1 };
+    };
+    const r = await runNode(actNode, { x: 1 }, { workspace: { cwd: "/w" } }, { send, act });
+    assert.equal(r.status, "ok");
+    assert.deepEqual(r.evidence?.filesTouched, ["a.ts"]);
+    assert.equal(sendCalled, false);
+  });
+
+  it("act 成功后调 deps.verify(cwd)，verification 挂到结果", async () => {
+    const act: ActSender = async () => ({ result: '{"v":1}', durationMs: 1, evidence: emptyEvidence });
+    let verifiedCwd = "";
+    const verify: Verifier = async (cwd) => {
+      verifiedCwd = cwd;
+      return { filesChanged: ["a.ts"], diffStat: "1 file", checks: [], testsPass: null };
+    };
+    const r = await runNode(actNode, { x: 1 }, { workspace: { cwd: "/w" } }, { send: scripted(['{"v":1}']).send, act, verify });
+    assert.equal(verifiedCwd, "/w");
+    assert.deepEqual(r.verification?.filesChanged, ["a.ts"]);
+  });
+
+  it("exec=act 但无 deps.act：降级走 send（不崩、无证据）", async () => {
+    const s = scripted(['{"v":1}']);
+    const r = await runNode(actNode, { x: 1 }, ctx, { send: s.send });
+    assert.equal(r.status, "ok");
+    assert.equal(s.calls(), 1); // 确实走了 send
+    assert.equal(r.evidence, undefined);
+    assert.equal(r.verification, undefined);
+  });
+
+  it("act 产出不过契约：不调 verify（没成功就没有地面真值可校）", async () => {
+    const act: ActSender = async () => ({ result: "坏", durationMs: 1, evidence: emptyEvidence });
+    let verifyCalled = false;
+    const verify: Verifier = async () => {
+      verifyCalled = true;
+      return { filesChanged: [], diffStat: "", checks: [], testsPass: null };
+    };
+    const r = await runNode({ ...actNode, maxRepairs: 0 }, { x: 1 }, { workspace: { cwd: "/w" } }, { send: scripted(['{"v":1}']).send, act, verify });
+    assert.equal(r.status, "repair_exhausted");
+    assert.equal(verifyCalled, false);
   });
 });

@@ -36,10 +36,11 @@ export const testWriterNode: NodeTemplate<TestWriterInput, TestWriterOutput> = {
   id: "test-writer",
   kind: "producer",
   purpose: "test",
+  exec: "act", // 真写测试并跑：走 act 原语
   role: "你是测试工程师，为给定改动补充覆盖充分的测试。",
   output: testWriterContract,
   mode: "agent",
-  tools: ["read", "write", "shell"],
+  tools: ["Read", "Write", "Bash"],
   render(input, ctx) {
     const cwd = ctx.workspace?.cwd ?? process.cwd();
     return {

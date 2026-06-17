@@ -1,219 +1,273 @@
+/* ============================================================================
+   LoopForge 设计层 —— 暖色账本 / Anthropic 编辑风（取自 carter_book）
+   单一来源：token 变量 + 暖色 base + 编辑感工具类。组件用 Tailwind 语义色
+   （bg-surface / text-ink / border-hair / text-brand …）+ 下方 .label-caps /
+   .section-label / .tone-* / .num-* 等签名类拼装，不再散写冷色与阴影。
+   ============================================================================ */
+
+:root {
+  /* Surfaces · 暖色账本 */
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-2: #efece2;
+
+  /* Ink */
+  --ink: #2a221c;
+  --ink2: #6b5f54;
+  --ink3: #9b8f84;
+  --ink4: #c2b7ad;
+
+  /* Borders · hairline */
+  --border: rgba(42, 34, 28, 0.14);
+  --border-soft: rgba(42, 34, 28, 0.08);
+  --border-strong: rgba(42, 34, 28, 0.24);
+
+  /* Brand · terracotta（单点聚焦） */
+  --brand: #c96442;
+  --brand-soft: #e8c5a8;
+  --brand-bg: rgba(201, 100, 66, 0.08);
+  --brand-bg-strong: rgba(201, 100, 66, 0.16);
+  --brand-ink: #8a3f24;
+
+  /* 账本红绿 */
+  --up: #1a8754;
+  --up-bg: rgba(26, 135, 84, 0.1);
+  --down: #b54545;
+  --down-bg: rgba(181, 69, 69, 0.1);
+
+  /* 暖色 accent ramp */
+  --acc-amber: #c08a3c;
+  --acc-olive: #7a8559;
+  --acc-clay: #a4633a;
+  --acc-sage: #6e8e6a;
+  --acc-sienna: #9a4f30;
+  --acc-stone: #8b8275;
+  --acc-mauve: #806272;
+
+  /* Fonts */
+  --font-serif: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+  --font-sans: "Inter", -apple-system, "PingFang SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, ui-monospace, monospace;
+
+  /* Transition */
+  --t-fast: 100ms;
+  --t-base: 160ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Safe area */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 暗色：暖夜（修改时与下方 @media auto 块保持同步） */
+[data-theme="dark"] {
+  --bg: #1c1a17;
+  --surface: #252220;
+  --surface-2: #2e2a26;
+  --ink: #f5ede0;
+  --ink2: #b6ab9d;
+  --ink3: #8a8175;
+  --ink4: #5b5448;
+  --border: rgba(245, 237, 224, 0.1);
+  --border-soft: rgba(245, 237, 224, 0.06);
+  --border-strong: rgba(245, 237, 224, 0.2);
+  --brand-bg: rgba(201, 100, 66, 0.16);
+  --up-bg: rgba(26, 135, 84, 0.16);
+  --down-bg: rgba(181, 69, 69, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    --bg: #1c1a17;
+    --surface: #252220;
+    --surface-2: #2e2a26;
+    --ink: #f5ede0;
+    --ink2: #b6ab9d;
+    --ink3: #8a8175;
+    --ink4: #5b5448;
+    --border: rgba(245, 237, 224, 0.1);
+    --border-soft: rgba(245, 237, 224, 0.06);
+    --border-strong: rgba(245, 237, 224, 0.2);
+    --brand-bg: rgba(201, 100, 66, 0.16);
+    --up-bg: rgba(26, 135, 84, 0.16);
+    --down-bg: rgba(181, 69, 69, 0.16);
+  }
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================================
-   全局基线：排版 / 背景 / 焦点态
-   ============================================================================ */
-
-/* ─ HTML / Body 基线 */
+/* ───── base ───── */
 @layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   html {
-    /* 字体平滑化（macOS）*/
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply bg-white text-slate-900;
-    font-feature-settings: "kern" 1;
-    /* 行高基线 */
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01", "cv11";
+    text-rendering: optimizeLegibility;
   }
 
-  /* ─ 标题排版：递进式 */
-  h1 {
-    @apply text-4xl font-bold leading-tight;
-    letter-spacing: -0.01em;
-  }
-
-  h2 {
-    @apply text-3xl font-semibold;
-    letter-spacing: -0.005em;
-  }
-
+  /* 标题与数字默认衬线 */
+  h1,
+  h2,
   h3 {
-    @apply text-2xl font-semibold;
+    font-family: var(--font-serif);
+    color: var(--ink);
+    margin: 0;
   }
 
-  h4 {
-    @apply text-xl font-semibold;
-  }
-
-  h5 {
-    @apply text-lg font-medium;
-  }
-
-  h6 {
-    @apply text-base font-medium;
-  }
-
-  /* ─ 正文段落（增强对比度：WCAG AA） */
-  p {
-    @apply text-base leading-relaxed text-slate-800;
-  }
-
-  small {
-    @apply text-sm text-slate-700;
-  }
-
-  /* ─ 列表 */
-  ul,
-  ol {
-    @apply space-y-2;
-  }
-
-  li {
-    @apply text-slate-800;
-  }
-
-  /* ─ 链接 */
-  a {
-    @apply text-violet-600 underline transition-colors duration-150;
-  }
-
-  a:hover {
-    @apply text-violet-700;
-  }
-
-  a:focus-visible {
-    @apply outline-none ring-2 ring-offset-2 ring-violet-500;
-  }
-
-  /* ─ 代码块 */
-  code {
-    @apply font-mono text-sm text-rose-700 bg-slate-100 rounded px-1.5 py-0.5;
-  }
-
-  pre {
-    @apply bg-slate-900 text-slate-100 rounded-lg p-4 overflow-x-auto;
-    line-height: 1.6;
-  }
-
-  pre code {
-    @apply text-slate-100 bg-none p-0;
-  }
-
-  /* ─ 水平线 */
-  hr {
-    @apply border-slate-200;
-  }
-}
-
-/* ─ 表单基线 */
-@layer base {
-  /* ─ Input / Textarea / Select */
-  input[type="text"],
-  input[type="email"],
-  input[type="password"],
-  input[type="number"],
-  input[type="search"],
-  input[type="tel"],
-  input[type="url"],
-  textarea,
-  select {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900;
-    @apply transition-colors duration-150;
-    @apply shadow-sm;
-  }
-
-  input[type="text"]::placeholder,
-  input[type="email"]::placeholder,
-  input[type="password"]::placeholder,
-  input[type="number"]::placeholder,
-  input[type="search"]::placeholder,
-  input[type="tel"]::placeholder,
-  input[type="url"]::placeholder,
-  textarea::placeholder {
-    @apply text-slate-400;
-  }
-
-  /* ─ 焦点态：环形高亮（增强可见度） */
+  /* 表单控件焦点：terracotta 细描边，不要冷色光环 */
   input:focus,
   textarea:focus,
   select:focus {
-    @apply outline-none border-violet-600 ring-2 ring-violet-500 ring-offset-2;
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px var(--brand);
   }
 
-  /* ─ Disabled 状态 */
-  input:disabled,
-  textarea:disabled,
-  select:disabled {
-    @apply bg-slate-50 text-slate-400 cursor-not-allowed;
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink4);
   }
 
-  /* ─ 复选框 / 单选框 */
-  input[type="checkbox"],
-  input[type="radio"] {
-    @apply h-4 w-4 rounded border-slate-300 text-violet-600;
-    @apply cursor-pointer transition-colors duration-150;
-    accent-color: rgb(139, 92, 246); /* violet-600 */
+  /* 复选框走品牌色 */
+  input[type="checkbox"] {
+    accent-color: var(--brand);
   }
 
-  input[type="checkbox"]:focus,
-  input[type="radio"]:focus {
-    @apply ring-2 ring-offset-1 ring-violet-500;
-  }
-
-  input[type="checkbox"]:disabled,
-  input[type="radio"]:disabled {
-    @apply cursor-not-allowed opacity-50;
+  ::selection {
+    background: var(--brand-bg-strong, rgba(201, 100, 66, 0.16));
   }
 }
 
-/* ─ 按钮基线 */
-@layer base {
-  button {
-    @apply transition-colors duration-150;
-    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500;
+/* ───── 编辑感工具类（签名构件） ───── */
+@layer components {
+  /* kicker：标题上方的小字大写宽字距标签 */
+  .kicker {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink3);
   }
 
-  button:disabled {
-    @apply opacity-50 cursor-not-allowed;
+  /* 大写宽字距标签 */
+  .label-caps {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink3);
   }
 
-  /* ─ 确保按钮文字对比度足够（WCAG AA） */
-  button {
-    @apply font-medium;
+  /* section 分节标签：ornament · 大写标签 · 横线 rule */
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
-}
-
-/* ─ 表格基线 */
-@layer base {
-  table {
-    @apply w-full;
+  .section-label .ornament {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 14px;
+    color: var(--ink3);
   }
-
-  th {
-    @apply bg-slate-100 font-semibold text-slate-900 text-left px-4 py-2;
-    @apply border-b border-slate-300;
+  .section-label .caps {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    white-space: nowrap;
   }
-
-  td {
-    @apply px-4 py-2 border-b border-slate-200 text-slate-700;
-  }
-
-  tr:hover {
-    @apply bg-slate-50;
-  }
-
-  /* ─ 可聚焦行的焦点态 */
-  tr:focus-within {
-    @apply bg-slate-50;
-  }
-}
-
-/* ─ 文章/长文本基线（不依赖 typography 插件，用基础工具类即可） */
-@layer base {
-  article a {
-    @apply text-violet-600 hover:text-violet-700 underline;
+  .section-label .rule {
+    flex: 1;
+    height: 1px;
+    background: var(--border-soft);
   }
 
-  article strong {
-    @apply font-semibold text-slate-900;
+  /* 序号：编辑感斜体衬线序数 */
+  .seq {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    color: var(--ink3);
+    font-variant-numeric: tabular-nums;
   }
 
-  article em {
-    @apply italic text-slate-700;
+  /* 衬线数字（≥24px 一律 serif light） */
+  .num-lg {
+    font-family: var(--font-serif);
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--ink);
+  }
+
+  /* chip 色调（tier / kind / diff / 状态 共用），由 format.ts 注入类名 */
+  .tone-brand {
+    background: var(--brand-bg);
+    color: var(--brand-ink);
+  }
+  .tone-up {
+    background: var(--up-bg);
+    color: var(--up);
+  }
+  .tone-down {
+    background: var(--down-bg);
+    color: var(--down);
+  }
+  .tone-amber {
+    background: rgba(192, 138, 60, 0.14);
+    color: var(--acc-amber);
+  }
+  .tone-olive {
+    background: rgba(122, 133, 89, 0.16);
+    color: var(--acc-olive);
+  }
+  .tone-sage {
+    background: rgba(110, 142, 106, 0.16);
+    color: var(--acc-sage);
+  }
+  .tone-mute {
+    background: var(--surface-2);
+    color: var(--ink3);
+  }
+  [data-theme="dark"] .tone-amber {
+    color: #d6a85e;
+  }
+  [data-theme="dark"] .tone-olive {
+    color: #9aa874;
+  }
+  [data-theme="dark"] .tone-sage {
+    color: #8db088;
+  }
+
+  /* 隐藏横向滚动条（chip 行 / tab 行） */
+  .scroll-x {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .scroll-x::-webkit-scrollbar {
+    display: none;
   }
 }

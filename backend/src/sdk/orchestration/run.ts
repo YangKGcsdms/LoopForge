@@ -8,6 +8,7 @@
 
 import type { Contract } from "./contract.js";
 import type {
+  ActEvidence,
   Mode,
   ModelRef,
   NodeHook,
@@ -19,6 +20,7 @@ import type {
   NodeRunContext,
   NodeTemplate,
   TokenUsage,
+  Verification,
 } from "./node.js";
 
 /** 底层发送请求：把 SDK 的 send 收口成这个最小形状。 */
@@ -41,12 +43,36 @@ export interface SendResult {
   durationMs: number;
 }
 
-/** 发送原语的抽象边界。落地时 = (req) => provider 跑一次 Run。 */
+/** think 发送原语的抽象边界。落地时 = (req) => provider.send（只读单发）。 */
 export type Sender = (req: SendRequest) => Promise<SendResult>;
 
-/** runNode 的依赖注入：send 必给，summarize（小模型总结器）/ 附加钩子可选。 */
+/** act 请求：在 cwd 下开真工具跑 agentic loop。approve/tools 已在构造 ActSender 时闭包绑定。 */
+export interface ActRequest {
+  system: string;
+  user: string;
+  model?: ModelRef;
+  cwd: string;
+  tools?: string[];
+}
+
+/** act 结果 = send 结果 + 采集到的证据。 */
+export interface ActResult extends SendResult {
+  evidence: ActEvidence;
+}
+
+/** act 原语的抽象边界。落地时 = (req) => provider.act（真工具+审批+证据）。 */
+export type ActSender = (req: ActRequest) => Promise<ActResult>;
+
+/** 独立校验器：在 cwd 下跑 git diff + 配置的 test/typecheck，返回地面真值。 */
+export type Verifier = (cwd: string) => Promise<Verification>;
+
+/** runNode 的依赖注入：send 必给，act/verify（act 节点用）、summarize、hooks 可选。 */
 export interface NodeDeps {
   send: Sender;
+  /** act 节点执行原语；省略时 act 节点降级走 send（无证据，并告警）。 */
+  act?: ActSender;
+  /** act 后的独立校验器；省略时 act 节点无 verification（评审只能靠 evidence）。 */
+  verify?: Verifier;
   /** 小模型总结器；省略则不生成 summary。 */
   summarize?: Sender;
   /** 全局附加钩子（如 persistHook），与 template.hooks 合并。 */
@@ -88,24 +114,38 @@ export async function runNode<I, O>(
   for (const h of hooks) await h.onInput?.(inEvt);
 
   const maxRepairs = template.maxRepairs ?? 2;
+  // act 节点：有 deps.act 才走 act 原语（真工具+证据）；否则降级 send（无证据）并告警一次。
+  const isAct = template.exec === "act" && !!deps.act;
+  if (template.exec === "act" && !deps.act) {
+    console.warn(`[runNode] act 节点 ${template.id} 无 deps.act，降级走 send（无证据，无独立校验）`);
+  }
+  const cwd = ctx.workspace?.cwd ?? process.cwd();
   let user = baseUser;
   let repairs = 0;
   let totalMs = 0;
   let last: SendResult | undefined;
+  let evidence: ActEvidence | undefined;
   let value: O | undefined;
   let ok = false;
   let errored: string | undefined;
 
   try {
     while (true) {
-      const sent = await deps.send({
-        system,
-        user,
-        model,
-        mode: template.mode,
-        tools: template.tools,
-        cwd: ctx.workspace?.cwd,
-      });
+      let sent: SendResult;
+      if (isAct) {
+        const r = await deps.act!({ system, user, model, cwd, tools: template.tools });
+        evidence = r.evidence; // 留最后一轮的证据
+        sent = r;
+      } else {
+        sent = await deps.send({
+          system,
+          user,
+          model,
+          mode: template.mode,
+          tools: template.tools,
+          cwd: ctx.workspace?.cwd,
+        });
+      }
       last = sent;
       totalMs += sent.durationMs;
 
@@ -121,6 +161,16 @@ export async function runNode<I, O>(
     }
   } catch (e) {
     errored = e instanceof Error ? e.message : String(e);
+  }
+
+  // act 节点：成功后跑独立校验（git diff + test/typecheck），拿地面真值。verify 失败不阻断主结果。
+  let verification: Verification | undefined;
+  if (ok && isAct && deps.verify) {
+    try {
+      verification = await deps.verify(cwd);
+    } catch (e) {
+      console.warn(`[runNode] verify 失败（${template.id}）：${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   let summary: string | undefined;
@@ -149,6 +199,8 @@ export async function runNode<I, O>(
     requestId: last?.requestId,
     durationMs: totalMs,
     summary,
+    evidence,
+    verification,
     error: errored,
   };
 

@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from "vue";
 import { api, type ProviderInfo, type SkStatus } from "../api/client";
 import BaseButton from "./BaseButton.vue";
 import BaseInput from "./BaseInput.vue";
-import BaseCard from "./BaseCard.vue";
 import BaseSelect from "./BaseSelect.vue";
 import BaseTag from "./BaseTag.vue";
 
@@ -37,11 +36,11 @@ const providerHint = computed(() =>
 const messageClass = computed(() => {
   switch (tone.value) {
     case "ok":
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+      return "bg-up-bg text-up border-hair";
     case "error":
-      return "bg-rose-50 text-rose-700 border-rose-200";
+      return "bg-down-bg text-down border-hair";
     case "info":
-      return "bg-sky-50 text-sky-700 border-sky-200";
+      return "bg-brand-bg text-brand-ink border-hair";
     default:
       return "hidden";
   }
@@ -127,20 +126,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <BaseCard variant="default" size="lg">
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold">SK 配置</h2>
-      <p class="mt-1 text-sm text-slate-700">配置访问密钥（Secret Key）以驱动 SDK 集成层。</p>
+  <section>
+    <div class="section-label mb-5">
+      <span class="ornament">·</span>
+      <span class="caps">SK 配置 · Credential</span>
+      <span class="rule"></span>
     </div>
 
     <!-- Provider 选择 -->
     <div class="mb-5">
-      <label class="mb-1.5 block text-sm font-medium text-slate-800">Provider</label>
-      <BaseSelect
-        v-model="selectedProvider"
-        fullWidth
-        @change="loadStatus"
-      >
+      <label class="label-caps mb-2 block">Provider</label>
+      <BaseSelect v-model="selectedProvider" fullWidth @change="loadStatus">
         <option v-for="p in supportedProviders" :key="p.id" :value="p.id">
           {{ p.displayName }}
         </option>
@@ -148,31 +144,29 @@ onMounted(async () => {
           {{ p.displayName }} —— {{ p.note ?? "暂不支持" }}
         </option>
       </BaseSelect>
-      <p class="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
-        <span class="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600"></span>
+      <p class="mt-2 flex items-start gap-1.5 text-[12px] leading-relaxed text-ink3">
+        <span class="mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-brand"></span>
         {{ providerHint }}
       </p>
     </div>
 
     <!-- 当前状态 -->
-    <div class="mb-5 rounded-lg bg-slate-50 px-4 py-3 text-sm">
-      <span class="text-slate-700">当前状态：</span>
+    <div class="mb-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-hair-soft py-3 text-sm">
+      <span class="label-caps">当前状态</span>
       <template v-if="status?.configured">
-        <span class="font-medium text-emerald-600">已配置</span>
-        <span class="ml-2 font-mono text-slate-800">{{ status.maskedKey }}</span>
-        <BaseTag v-if="status.source === 'env'" color="bg-slate-200 text-slate-700" class="ml-2">
-          来自环境变量
-        </BaseTag>
-        <span v-if="status.updatedAt" class="ml-2 text-xs text-slate-600">
+        <span class="font-medium text-up">已配置</span>
+        <span class="font-mono text-[12px] text-ink2">{{ status.maskedKey }}</span>
+        <BaseTag v-if="status.source === 'env'" color="tone-mute">来自环境变量</BaseTag>
+        <span v-if="status.updatedAt" class="font-mono text-[11px] text-ink3">
           更新于 {{ new Date(status.updatedAt).toLocaleString() }}
         </span>
       </template>
-      <span v-else class="font-medium text-slate-600">未配置</span>
+      <span v-else class="text-ink3">未配置</span>
     </div>
 
     <!-- SK 输入 -->
     <div class="mb-5">
-      <label class="mb-1.5 block text-sm font-medium text-slate-800">Secret Key</label>
+      <label class="label-caps mb-2 block">Secret Key</label>
       <div class="flex gap-2">
         <BaseInput
           v-model="apiKey"
@@ -181,49 +175,29 @@ onMounted(async () => {
           class="font-mono"
           fullWidth
         />
-        <BaseButton
-          type="button"
-          variant="secondary"
-          @click="showKey = !showKey"
-        >
+        <BaseButton type="button" variant="secondary" @click="showKey = !showKey">
           {{ showKey ? "隐藏" : "显示" }}
         </BaseButton>
       </div>
-      <p class="mt-1.5 text-xs text-slate-600">SK 仅发送到本地后端并落盘于 backend/.data，不经第三方。</p>
+      <p class="mt-2 text-[12px] text-ink3">SK 仅发送到本地后端并落盘于 backend/.data，不经第三方。</p>
     </div>
 
     <!-- 操作按钮 -->
-    <div class="flex flex-wrap gap-3">
-      <BaseButton
-        type="button"
-        variant="primary"
-        :disabled="busy !== null"
-        @click="save"
-      >
+    <div class="flex flex-wrap gap-2.5">
+      <BaseButton type="button" variant="primary" :disabled="busy !== null" @click="save">
         {{ busy === "save" ? "保存中…" : "保存" }}
       </BaseButton>
-      <BaseButton
-        type="button"
-        variant="secondary"
-        :disabled="busy !== null"
-        @click="validate"
-      >
+      <BaseButton type="button" variant="secondary" :disabled="busy !== null" @click="validate">
         {{ busy === "validate" ? "校验中…" : "验证连接" }}
       </BaseButton>
-      <BaseButton
-        type="button"
-        variant="danger"
-        class="ml-auto"
-        :disabled="busy !== null"
-        @click="clear"
-      >
+      <BaseButton type="button" variant="danger" class="ml-auto" :disabled="busy !== null" @click="clear">
         {{ busy === "clear" ? "清除中…" : "清除" }}
       </BaseButton>
     </div>
 
     <!-- 消息提示 -->
-    <div v-if="tone !== 'idle'" :class="messageClass" class="mt-5 rounded-lg border px-4 py-3 text-sm">
+    <div v-if="tone !== 'idle'" :class="messageClass" class="mt-5 rounded-md border px-4 py-3 text-[13px]">
       {{ message }}
     </div>
-  </BaseCard>
+  </section>
 </template>

@@ -10,10 +10,10 @@ describe("registry", () => {
   it("getProvider 未知 → undefined", () => {
     assert.equal(getProvider("nope"), undefined);
   });
-  it("listProviderInfos：cursor + claude-agent supported，openai 仍 coming soon", () => {
+  it("listProviderInfos：claude-agent supported，cursor 已冻结(unsupported)，openai 仍 coming soon", () => {
     const infos = listProviderInfos();
-    assert.equal(infos.find((i) => i.id === "cursor")?.supported, true);
     assert.equal(infos.find((i) => i.id === "claude-agent")?.supported, true);
+    assert.equal(infos.find((i) => i.id === "cursor")?.supported, false); // 已冻结
     assert.ok(infos.some((i) => i.id === "openai" && !i.supported));
   });
 });

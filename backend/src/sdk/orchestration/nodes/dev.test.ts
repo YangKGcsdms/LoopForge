@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { devStepNode, devReviewer } from "./dev.js";
-import type { EvaluatorVerdict } from "../node.js";
+import { devStepNode, devReviewer, devRedTeam } from "./dev.js";
+import type { EvaluatorVerdict, Verification } from "../node.js";
 import type { Subtask } from "./decompose.js";
 
 const task: Subtask = { id: "T7", title: "标题", estimateHours: 4, acceptance: "验收标准X" };
@@ -52,5 +52,45 @@ describe("devReviewer", () => {
     );
     assert.ok(p.dynamic.includes("目标G"));
     assert.ok(p.static.includes("完成情况") || p.static.includes("完成"));
+  });
+});
+
+describe("接地气 evaluator（判 verification 而非自报）", () => {
+  // 自报"全过 9/0"，但独立校验给出真相
+  const step = { taskId: "T7", filesTouched: ["a.ts"], summary: "做完了", testsRun: { passed: 9, failed: 0 }, selfCheck: "全过" };
+  const input = { task, step, goal: "目标G" };
+
+  it("devReviewer.render 注入 verification：testsPass=false 进 prompt，指令要求据校验判 done", () => {
+    const v: Verification = {
+      filesChanged: ["a.ts"],
+      diffStat: "1 file changed",
+      checks: [{ name: "test", command: "npm test", exitCode: 1, ok: false, output: "FAIL" }],
+      testsPass: false,
+    };
+    const p = devReviewer.render(input, { verification: v });
+    assert.ok(p.dynamic.includes("testsPass"));
+    assert.ok(p.dynamic.includes("false"));
+    assert.ok(p.dynamic.includes("独立校验"));
+    assert.ok(/独立校验/.test(p.static) && /false|不得|null/.test(p.static));
+  });
+
+  it("无 verification → render 明示无独立信号（不得据测试判 done）", () => {
+    const p = devReviewer.render(input, {});
+    assert.ok(/无|未配/.test(p.dynamic));
+  });
+
+  it("devRedTeam 同样判 verification：testsPass=null 也不算过", () => {
+    const v: Verification = { filesChanged: [], diffStat: "", checks: [], testsPass: null };
+    const p = devRedTeam.render(input, { verification: v });
+    assert.ok(p.dynamic.includes("testsPass"));
+    assert.ok(/独立校验|地面真值|尺子/.test(p.static));
+  });
+
+  it("evidence 工具轨迹（含失败命令）进入 prompt 作参考", () => {
+    const p = devReviewer.render(input, {
+      evidence: { toolCalls: [], filesTouched: ["a.ts"], bashRuns: [{ command: "npm test", ok: false }] },
+    });
+    assert.ok(p.dynamic.includes("npm test"));
+    assert.ok(p.dynamic.includes("失败"));
   });
 });

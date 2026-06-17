@@ -10,9 +10,13 @@ import type {
 /**
  * Cursor Provider —— 封装 @cursor/sdk。
  *
- * 关键设计：@cursor/sdk 通过「动态 import」按需加载，
- * 未安装时优雅降级（返回明确提示而非崩溃）。
- * 这样脚手架在没装 SDK 时也能正常跑通前后端与 SK 配置流程。
+ * 【已冻结】项目收敛为"协助 CC 工作流的壳"，只走 Claude 路线。
+ * 本 provider 代码休眠保留（`info().supported=false`，编排层/路由不再选它），
+ * 别删别引用——理由见 docs/架构设计_CC壳与节点切分.md。
+ * 冻结原因：Cursor headless 无可编程审批回调（canUseTool），接不上飞书审批，
+ * 且与 Claude Agent SDK 能力面差异过大，统一 provider 会两头失血。
+ *
+ * 关键设计：@cursor/sdk 通过「动态 import」按需加载，未安装时优雅降级。
  * 激活真实 SDK：`npm i -w backend @cursor/sdk`
  */
 
@@ -39,7 +43,8 @@ export class CursorProvider implements SdkProvider {
     return {
       id: "cursor",
       displayName: "Cursor SDK",
-      supported: true,
+      supported: false,
+      note: "已冻结：项目只走 Claude 路线",
     };
   }
 

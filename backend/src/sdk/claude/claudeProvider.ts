@@ -3,12 +3,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SdkProvider } from "../provider.js";
 import type {
+  AgentActOptions,
+  AgentActResult,
   AgentSendOptions,
   AgentSendResult,
   ProviderInfo,
   SdkModelInfo,
   ValidateResult,
 } from "../types.js";
+import { applyMessage, finalizeEvidence, newEvidence } from "./evidence.js";
+
+/** think（只读）节点禁用的工具：任何会改文件 / 执行命令的都不给。 */
+const READONLY_DISALLOWED = ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"];
+
+/**
+ * 审批桥接：提供 approve 时用 default 模式 + canUseTool 把需批准的工具交外部裁决；
+ * allowedTools 里的安全工具自动放行、不触发审批。send（think）与 act 共用。
+ */
+function makeCanUseTool(opts: AgentSendOptions) {
+  if (!opts.approve) return undefined;
+  return async (toolName: string, input: unknown, o?: { signal?: AbortSignal }) => {
+    const decision = await opts.approve!({ tool: toolName, input, cwd: opts.cwd, signal: o?.signal });
+    return decision.allow
+      ? { behavior: "allow" as const, updatedInput: input as Record<string, unknown> }
+      : { behavior: "deny" as const, message: decision.reason ?? "审批未通过" };
+  };
+}
 
 /**
  * Claude Agent SDK Provider —— 封装 @anthropic-ai/claude-agent-sdk 的 query()。
@@ -93,17 +113,9 @@ export class ClaudeAgentProvider implements SdkProvider {
       let result = "";
       let usage: AgentSendResult["usage"];
       let model = opts.model?.id;
-      // 审批桥接：提供 approve 时用 default 模式 + canUseTool，把需批准的工具（Bash 等）交给外部裁决；
-      // allowedTools 里的安全工具自动放行，不触发审批。没有 approve 时退回原来的 acceptEdits。
-      const canUseTool = opts.approve
-        ? async (toolName: string, input: unknown, o?: { signal?: AbortSignal }) => {
-            const decision = await opts.approve!({ tool: toolName, input, cwd: opts.cwd, signal: o?.signal });
-            return decision.allow
-              ? { behavior: "allow" as const, updatedInput: input as Record<string, unknown> }
-              : { behavior: "deny" as const, message: decision.reason ?? "审批未通过" };
-          }
-        : undefined;
-      const permissionMode = canUseTool ? "default" : opts.mode === "plan" ? "plan" : "acceptEdits";
+      // think 路径：readOnly 时禁掉一切改文件/执行类工具，保证只读无副作用。
+      const canUseTool = makeCanUseTool(opts);
+      const permissionMode = canUseTool ? "default" : opts.readOnly ? "plan" : opts.mode === "plan" ? "plan" : "acceptEdits";
       // 官方原语：query({ prompt, options }) 返回异步消息流；system(init) 带真实 model，result 带终态。
       for await (const message of loaded.sdk.query({
         prompt: opts.prompt,
@@ -112,6 +124,7 @@ export class ClaudeAgentProvider implements SdkProvider {
           model: opts.model?.id,
           permissionMode,
           ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
+          ...(opts.readOnly ? { disallowedTools: READONLY_DISALLOWED } : {}),
           ...(canUseTool ? { canUseTool } : {}),
         },
       })) {
@@ -135,6 +148,62 @@ export class ClaudeAgentProvider implements SdkProvider {
         }
       }
       return { result, model, usage, durationMs: Date.now() - started };
+    } finally {
+      if (opts.apiKey) {
+        if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+        else process.env.ANTHROPIC_API_KEY = prev;
+      }
+    }
+  }
+
+  /**
+   * act 原语：开真工具跑 agentic loop，canUseTool 桥接审批，观测消息流聚合 evidence。
+   * 与 send 的区别：永远开真工具（不 readOnly）、返回 evidence。permissionMode：有 approve 走
+   * default（未放行工具弹审批），否则 acceptEdits（信任本地工作目录、自动放行编辑）。
+   */
+  async act(opts: AgentActOptions): Promise<AgentActResult> {
+    const loaded = await loadClaudeSdk();
+    if (!loaded.ok) throw new Error(loaded.reason);
+    const started = Date.now();
+    const prev = process.env.ANTHROPIC_API_KEY;
+    if (opts.apiKey) process.env.ANTHROPIC_API_KEY = opts.apiKey;
+    const acc = newEvidence();
+    try {
+      let result = "";
+      let usage: AgentSendResult["usage"];
+      let model = opts.model?.id;
+      const canUseTool = makeCanUseTool(opts);
+      const permissionMode = canUseTool ? "default" : "acceptEdits";
+      for await (const message of loaded.sdk.query({
+        prompt: opts.prompt,
+        options: {
+          cwd: opts.cwd,
+          model: opts.model?.id,
+          permissionMode,
+          ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
+          ...(canUseTool ? { canUseTool } : {}),
+        },
+      })) {
+        applyMessage(acc, message); // 边消费边聚合证据
+        const m = message as {
+          type?: string;
+          subtype?: string;
+          model?: string;
+          result?: string;
+          is_error?: boolean;
+          errors?: string[];
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+        if (m.type === "system" && typeof m.model === "string") model = m.model;
+        if (m.type === "result") {
+          if (m.is_error || (m.subtype && m.subtype !== "success")) {
+            throw new Error(m.errors?.join("；") || `Claude 运行错误（${m.subtype ?? "unknown"}）`);
+          }
+          if (typeof m.result === "string") result = m.result;
+          if (m.usage) usage = { inputTokens: m.usage.input_tokens ?? 0, outputTokens: m.usage.output_tokens ?? 0 };
+        }
+      }
+      return { result, model, usage, evidence: finalizeEvidence(acc), durationMs: Date.now() - started };
     } finally {
       if (opts.apiKey) {
         if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;

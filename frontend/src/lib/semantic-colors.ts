@@ -1,88 +1,29 @@
 /**
- * 语义色 Token 映射
- * 定义难度/路由/diff 颜色的统一 token，与 tailwind 设计系统对齐
+ * 语义色 Token 映射 —— 暖色账本 / Anthropic 编辑风。
+ * 返回的是 style.css @layer components 里定义的 chip 色调类名（.tone-*），
+ * 由 BaseTag 套用；切暗色时这些 tone 类随 CSS 变量自动适配。
  *
- * 设计原则：
- * - 模型强度 (tier)：violet(强) → sky(中) → slate(弱/默认)
- * - 节点类型 (kind)：amber(评估) → rose(关卡) → sky(生产者/默认)
- * - 难度 (diff)：rose(难) → amber(中) → emerald(易)
+ * 设计原则（暖色谱，terracotta 单点聚焦）：
+ * - 模型强度 (tier)：brand(强/terracotta) → olive(中) → mute(弱/默认)
+ * - 节点类型 (kind)：amber(评估) → down(关卡/红) → sage(生产者/默认)
+ * - 难度 (diff)：down(难/红) → amber(中) → up(易/绿)
  */
 
-export type SemanticColorToken = {
-  bg: string; // 背景色 class
-  text: string; // 文字色 class
+export const tierTone: Record<string, string> = {
+  strong: "tone-brand",
+  mid: "tone-olive",
+  default: "tone-mute",
 };
 
-/**
- * 模型档位色彩映射
- * strong → 紫色强调
- * mid → 天蓝色强调
- * cheap/default → 灰色低调
- */
-export const tierColors: Record<string, SemanticColorToken> = {
-  strong: {
-    bg: "bg-violet-100",
-    text: "text-violet-700",
-  },
-  mid: {
-    bg: "bg-sky-100",
-    text: "text-sky-700",
-  },
-  default: {
-    bg: "bg-slate-100",
-    text: "text-slate-600",
-  },
+export const kindTone: Record<string, string> = {
+  evaluator: "tone-amber",
+  gate: "tone-down",
+  default: "tone-sage",
 };
 
-/**
- * 节点类型色彩映射
- * evaluator → 琥珀色警告
- * gate → 玫瑰色严格
- * producer/default → 天蓝色常规
- */
-export const kindColors: Record<string, SemanticColorToken> = {
-  evaluator: {
-    bg: "bg-amber-100",
-    text: "text-amber-700",
-  },
-  gate: {
-    bg: "bg-rose-100",
-    text: "text-rose-700",
-  },
-  default: {
-    bg: "bg-sky-100",
-    text: "text-sky-700",
-  },
+export const diffTone: Record<string, string> = {
+  hard: "tone-down",
+  medium: "tone-amber",
+  easy: "tone-up",
+  default: "tone-up",
 };
-
-/**
- * 难度色彩映射
- * hard → 玫瑰色高风险
- * medium → 琥珀色中等
- * easy/default → 翠绿色低风险
- */
-export const diffColors: Record<string, SemanticColorToken> = {
-  hard: {
-    bg: "bg-rose-100",
-    text: "text-rose-700",
-  },
-  medium: {
-    bg: "bg-amber-100",
-    text: "text-amber-700",
-  },
-  easy: {
-    bg: "bg-emerald-100",
-    text: "text-emerald-700",
-  },
-  default: {
-    bg: "bg-emerald-100",
-    text: "text-emerald-700",
-  },
-};
-
-/**
- * 获取语义色 token，返回合并后的 tailwind class
- */
-export function getTokenClasses(token: SemanticColorToken): string {
-  return `${token.bg} ${token.text}`;
-}

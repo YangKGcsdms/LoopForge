@@ -60,17 +60,17 @@ describe("renderNodeOutput", () => {
   });
 });
 
-describe("样式映射", () => {
+describe("样式映射（暖色 tone）", () => {
   it("tier", () => {
-    assert.match(tierClass("strong"), /violet/);
-    assert.match(tierClass("cheap"), /slate/);
+    assert.match(tierClass("strong"), /tone-brand/);
+    assert.match(tierClass("cheap"), /tone-mute/);
   });
   it("diff", () => {
-    assert.match(diffClass("hard"), /rose/);
-    assert.match(diffClass("easy"), /emerald/);
+    assert.match(diffClass("hard"), /tone-down/);
+    assert.match(diffClass("easy"), /tone-up/);
   });
   it("kind", () => {
-    assert.match(kindClass("evaluator"), /amber/);
-    assert.match(kindClass("producer"), /sky/);
+    assert.match(kindClass("evaluator"), /tone-amber/);
+    assert.match(kindClass("producer"), /tone-sage/);
   });
 });

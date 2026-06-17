@@ -1,24 +1,27 @@
 /**
- * Sender 适配器 —— 编排层与 Cursor SDK 的接缝。
- * 把 SdkProvider.send 包成 runNode/runLoop 用的 Sender：
- * SendRequest 的 system+user 合并成一条提示词，cwd 透传到 provider（→ Agent 的 local.cwd）。
+ * Sender 适配器 —— 编排层与 SDK provider 的接缝（think / act 两条）。
+ *
+ * think-sender（providerSender）：把 SendRequest 收口成 provider.send，**只读**（readOnly），
+ *   think 节点（plan/decompose/各 reviewer）用，永不弹审批、不改文件。
+ * act-runner（providerActSender）：把 ActRequest 收口成 provider.act，开真工具 + 绑定 approve（飞书审批）+
+ *   返回 evidence。act 节点（devStep/testWriter）用。provider 没实现 act 时降级走 send（无证据，告警）。
  */
 
-import type { Sender } from "./run.js";
+import type { ActResult, ActSender, Sender } from "./run.js";
 import type { SdkProvider } from "../provider.js";
 import type { ToolApprover } from "../types.js";
 import { getProvider } from "../registry.js";
 
-/** Sender 装配选项：工作目录 + 工具放行/审批（透传到 provider.send）。 */
+/** Sender 装配选项：工作目录 + 工具放行/审批（透传到 provider）。 */
 export interface SenderOpts {
   defaultCwd?: string;
-  /** 免审批放行的安全工具；其余需批准的工具走 approve。 */
+  /** 免审批放行的安全工具；其余需批准的工具走 approve（仅 act 路径用）。 */
   allowedTools?: string[];
-  /** 工具审批回调（如飞书审批）。 */
+  /** 工具审批回调（如飞书审批，仅 act 路径用）。 */
   approve?: ToolApprover;
 }
 
-/** 把任意实现了 send 的 Provider 适配成 Sender（便于注入 mock 做验证）。 */
+/** think-sender：provider.send（只读单发）。think 节点不改文件、不审批。 */
 export function providerSender(
   provider: Pick<SdkProvider, "send">,
   apiKey: string,
@@ -33,7 +36,7 @@ export function providerSender(
       model: req.model,
       mode: req.mode,
       allowedTools: opts.allowedTools,
-      approve: opts.approve,
+      readOnly: true, // think = 只读，禁改文件/执行
     });
     return {
       result: r.result,
@@ -45,14 +48,64 @@ export function providerSender(
   };
 }
 
-/** 便捷：用注册表里的 cursor provider 造 Sender。 */
-export function cursorSender(apiKey: string, opts?: SenderOpts): Sender {
-  return senderFor("cursor", apiKey, opts);
+/** act-runner：provider.act（真工具+审批+证据）。provider 没实现 act → 降级 send，无证据。 */
+export function providerActSender(
+  provider: Pick<SdkProvider, "send" | "act">,
+  apiKey: string,
+  opts: SenderOpts = {},
+): ActSender {
+  return async (req) => {
+    const prompt = req.system ? `${req.system}\n\n${req.user}` : req.user;
+    const cwd = req.cwd ?? opts.defaultCwd ?? process.cwd();
+    if (!provider.act) {
+      const r = await provider.send({
+        prompt,
+        cwd,
+        apiKey,
+        model: req.model,
+        mode: "agent",
+        allowedTools: opts.allowedTools,
+        approve: opts.approve,
+      });
+      return {
+        result: r.result,
+        requestId: r.requestId,
+        usage: r.usage,
+        model: r.model ? { id: r.model } : req.model,
+        durationMs: r.durationMs,
+        evidence: { toolCalls: [], filesTouched: [], bashRuns: [] },
+      } satisfies ActResult;
+    }
+    const r = await provider.act({
+      prompt,
+      cwd,
+      apiKey,
+      model: req.model,
+      mode: "agent",
+      allowedTools: opts.allowedTools,
+      approve: opts.approve,
+    });
+    return {
+      result: r.result,
+      requestId: r.requestId,
+      usage: r.usage,
+      model: r.model ? { id: r.model } : req.model,
+      durationMs: r.durationMs,
+      evidence: r.evidence,
+    } satisfies ActResult;
+  };
 }
 
-/** 用注册表里任意 provider 造 Sender（cursor / claude-agent / …）。 */
+/** 用注册表里任意 provider 造 think-sender（默认 claude-agent）。 */
 export function senderFor(providerId: string, apiKey: string, opts?: SenderOpts): Sender {
   const provider = getProvider(providerId);
   if (!provider) throw new Error(`provider 未注册: ${providerId}`);
   return providerSender(provider, apiKey, opts);
+}
+
+/** 用注册表里任意 provider 造 act-runner（默认 claude-agent）。 */
+export function actSenderFor(providerId: string, apiKey: string, opts?: SenderOpts): ActSender {
+  const provider = getProvider(providerId);
+  if (!provider) throw new Error(`provider 未注册: ${providerId}`);
+  return providerActSender(provider, apiKey, opts);
 }

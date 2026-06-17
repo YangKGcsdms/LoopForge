@@ -4,7 +4,7 @@ import { runLoop, type LoopSpec } from "./loop.js";
 import { defineContract, type ContractResult } from "./contract.js";
 import { verdictContract } from "./nodes/contracts.js";
 import type { EvaluatorNode, EvaluatorVerdict, NodeTemplate } from "./node.js";
-import type { Sender } from "./run.js";
+import type { ActSender, Sender, Verifier } from "./run.js";
 
 interface POut {
   quality: number;
@@ -94,6 +94,38 @@ describe("runLoop", () => {
         : { result: "不是 JSON", durationMs: 1 };
     const r = await runLoop(spec(), { goal: "g" }, {}, { send: badSender });
     assert.equal(r.status, "error");
+  });
+
+  it("act producer 的 evidence/verification 注入评审 ctx（评审看得到地面真值）", async () => {
+    let seen = { hasVerification: false, hasEvidence: false, testsPass: undefined as boolean | null | undefined };
+    const actProducer: NodeTemplate<{ goal: string }, POut> = { ...producer, id: "act-prod", exec: "act" };
+    const capturingEval: EvaluatorNode<POut> = {
+      ...evaluator,
+      render: (i, c) => {
+        seen = { hasVerification: !!c.verification, hasEvidence: !!c.evidence, testsPass: c.verification?.testsPass };
+        return { static: "", dynamic: String(i.quality) };
+      },
+    };
+    const act: ActSender = async () => ({
+      result: JSON.stringify({ quality: 1 }),
+      durationMs: 1,
+      evidence: { toolCalls: [], filesTouched: ["a.ts"], bashRuns: [] },
+    });
+    const verify: Verifier = async () => ({ filesChanged: ["a.ts"], diffStat: "", checks: [], testsPass: true });
+    const send: Sender = async (req) =>
+      req.system.includes("evaluator-role")
+        ? { result: verdict(true), durationMs: 1 }
+        : { result: JSON.stringify({ quality: 1 }), durationMs: 1 };
+    const r = await runLoop(
+      { id: "loop", producer: actProducer, evaluator: capturingEval, toEvalInput: (o) => o, maxIterations: 2 },
+      { goal: "g" },
+      {},
+      { send, act, verify },
+    );
+    assert.equal(r.status, "converged");
+    assert.equal(seen.hasVerification, true);
+    assert.equal(seen.hasEvidence, true);
+    assert.equal(seen.testsPass, true);
   });
 
   it("矫正：上一轮 verdict 通过 priorVerdict 喂回产出节点", async () => {

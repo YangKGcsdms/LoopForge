@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目
 
-LoopForge —— 驾驭多家编码 agent SDK（Cursor SDK / Claude Agent SDK）的自驱编排层（meta-harness）。核心流程：难度评估 → 出方案 → 拆解成 N 个 3~5 工时 TODO → 每个 TODO 自循环开发（开发→评审→矫正→收敛），并按节点用途路由模型控成本。npm workspaces monorepo：`backend`（Express + TS）+ `frontend`（Vue3 + Vite + Tailwind v3）。Node ≥ 20。
+LoopForge —— 套在 **Claude Code（CC）这个"打不过的黑盒"外面的一层壳**。CC 的 harness/通用能力上限自建无法超越，所以**不碰它的内部**；壳只在外面补 CC 给不了的两样东西——**连续性**（持久/续跑/移交）和**信任**（边界/验证/审计）——把短命、需盯、困在单 session 的 vibe 工作，转成有界、可持久、可续跑、可审计、可移交的单元，即"**放心托管**"。
+
+三轴模型（架构灵魂）：**能力=CC 提供（节点内部别碰）/ 连续性=壳提供 / 信任=壳提供**。砍刀准则：任何特性先问"加的是能力还是连续性/信任"——加能力=和 CC 竞争=砍；加连续性/信任=核心。完整设计见 `docs/架构设计_CC壳与节点切分.md`（**工程基准**）。
+
+核心流程：难度评估 → 出方案 → 拆解成 N 个 3~5 工时 TODO → 每个 TODO 自循环开发（开发→**独立校验**→评审→矫正→收敛），按节点用途路由模型控成本。**Cursor SDK 已冻结**（代码休眠保留），只走 Claude 路线。npm workspaces monorepo：`backend`（Express + TS）+ `frontend`（Vue3 + Vite + Tailwind v3）。Node ≥ 20。
 
 ## 常用命令
 
@@ -20,32 +24,36 @@ LoopForge —— 驾驭多家编码 agent SDK（Cursor SDK / Claude Agent SDK）
 - 单个用例：再加 `--test-name-pattern="<名字>"`
 - **Live（真调 SDK、会计费）测试**：`npm --workspace backend run test:live`，只跑 `*.itest.ts`。普通 `npm test` 只跑 `*.test.ts`，绝不触发计费——保持这个 hermetic / `.itest.ts` 的划分。
 
+**测试框架（基准：`docs/测试框架与验收标准.md`）**：两层——① 单测(`*.test.ts`，纯逻辑) ② 集测{`chains.integration.test.ts` 三条 mock 链路(完整pipeline/接地气/审批)真正走一遍，零计费 · `live.itest.ts` 每类节点用 haiku+登录态真集成一次、断言符合契约}。新增功能点须配"一层单测 + 一层集测"。验收标准见该 md。
+
 后端用 `tsx` 直接跑 TS，**运行无需构建**（`dev` = `tsx watch src/server.ts`）。`build` 只是 tsc 产出，平时改完用 `typecheck` 验类型即可。
 
 ## 架构
 
 ### SDK 集成层 `backend/src/sdk`
-`provider.ts` 定义 `SdkProvider` 契约（`info` / `validateCredential` / `listModels` / `send`）。`cursor/cursorProvider.ts` 与 `claude/claudeProvider.ts` 各自实现，**都用动态 import 懒加载自己的 SDK，未装时优雅降级**（返回友好提示而非崩溃）。
+`provider.ts` 定义 `SdkProvider` 契约（`info` / `validateCredential` / `listModels` / `send` / 可选 `act`）。**`send` = think 原语**（只读、单发结构化）；**`act` = act 原语**（开真工具 + `canUseTool` 审批 + 观测消息流聚合 `evidence`，见 `claude/evidence.ts` 纯函数 reducer）。`claude/claudeProvider.ts` 实现两者；`cursor/cursorProvider.ts` **已冻结**（`info().supported=false`，代码休眠保留，别删别引用）。都用动态 import 懒加载、未装时优雅降级。
 
 ### 编排层 `backend/src/sdk/orchestration`（核心）
 四层抽象，自底向上：
 - **`contract.ts`** — `Contract<T>`：把输出 schema 注入 prompt、解析 agent 回复、校验结构。
-- **`run.ts` / `node.ts`** — `runNode` + `NodeTemplate`。节点 `render(input, ctx)` 产出 `{static, dynamic}` 两段提示；`kind` = producer | evaluator | gate，`purpose` = plan | control | execute | validate | review | test。`runNode` 负责：发送 → 按契约解析校验 → **有界 repair 重试** → 输入/输出 hooks → 可选小模型摘要 → `resolveModel` 覆盖路由。
-- **`loop.ts`** — `runLoop`：evaluator-optimizer 骨架（producer → evaluator → gate → 收敛/矫正）。矫正靠把上一轮 verdict 塞进 `ctx.priorVerdict`，producer 的 render 读它自我修正。**注意：迭代到 `maxIterations` 仍不收敛时，返回最后一轮产出、状态记 `max_iterations`，不阻断调用方。**
+- **`run.ts` / `node.ts`** — `runNode` + `NodeTemplate`。节点 `render(input, ctx)` 产出 `{static, dynamic}` 两段提示；`kind` = producer | evaluator | gate，`purpose` = plan | control | execute | validate | review | test，**`exec` = think | act（关键切分轴）**。`runNode` 按 `exec` 分流：**think 走 `deps.send`（只读）；act 走 `deps.act`（真工具+审批），并把 `evidence` 挂上 `NodeResult`，再调 `deps.verify(cwd)` 做独立校验**。其余照旧：契约解析校验 → 有界 repair 重试 → hooks → 可选小模型摘要 → `resolveModel` 覆盖路由。
+- **`loop.ts`** — `runLoop`：evaluator-optimizer 骨架（producer → [act 节点：采 evidence + verify] → evaluator → gate → 收敛/矫正）。**producer 是 act 节点时，把 `evidence`/`verification` 注入跑评审用的 evalCtx**，让 evaluator 判地面真值。矫正靠把上一轮 verdict 塞进 `ctx.priorVerdict`，producer 的 render 读它自我修正。**注意：迭代到 `maxIterations` 仍不收敛时，返回最后一轮产出、状态记 `max_iterations`，不阻断调用方。**
 - **`pipeline.ts`** — `runPipeline`：整条自驱流程（难度 → plan → decompose loop → 逐 TODO dev loop），按 `providerId` 选路由，边跑边 emit SSE 事件。
 
-具体节点在 `nodes/`：`router.ts`（难度评估 + 路由表）、`plan.ts`、`decompose.ts`、`dev.ts`（devStep + devReviewer）、`gate.ts`、`test.ts`。`hooks.ts` 是节点输入/输出钩子，`mock.ts` 是 dryRun 用的假 sender。
+具体节点在 `nodes/`：`router.ts`（难度评估 + 路由表）、`plan.ts`、`decompose.ts`、`dev.ts`（devStep[act] + devReviewer + devRedTeam）、`gate.ts`、`test.ts`（testWriter[act]）。`hooks.ts` 是节点输入/输出钩子，`mock.ts` 是 dryRun 用的假 sender，`verify.ts` 是 act 后的独立校验器。
 
-**验证模型（重要，易误判）：** 开发节点的 `testsRun` 是 agent **自报**字段，编排层自己**不**跑 build/测试；评审节点 `devReviewer` 也只读 producer 的 JSON 自报、不读文件不跑命令。即整条 loop 默认是"agent 报、agent 判"，没有独立执行兜底——动编排逻辑或排查"产出跑不起来"时要清楚这点。
+**验证模型（重要，核心设计）：** **think 节点**（plan/decompose/各 reviewer）只读、不碰文件，输出是结构化 JSON。**act 节点**（devStep/testWriter）真改代码并采 `evidence`（从 `tool_use`/`tool_result` 流聚合）；act 后由 **`verify.ts` 在 `workspace.cwd` 独立跑 `git diff` + 配置的 test/typecheck**（真 exit code，不经 agent）。`loop.ts` 把 `evidence` + `verification` 注入 evalCtx，**`devReviewer`/`devRedTeam` 判这份地面真值、不判 agent 自报**——`testsPass===false|null` 时 `completion.done` 不得为 true。这是"信任轴"的落点；动 loop 或排查"产出跑不起来"时，独立校验（verify）才是真信号，agent 的 `testsRun`/`filesTouched` 只是参考。
 
 ### 路由 `nodes/router.ts`
-**两套完全独立的 per-purpose 路由表**（`CURSOR_ROUTING` / `CLAUDE_ROUTING`），用各 SDK 的真实模型名、刻意不收敛到别名。`routingFor(providerId)` 选表，`resolverFor` 产出 `runNode` 用的 `resolveModel`。`MODEL_POOL` / `CLAUDE_POOL` 是 allowlist（admin 禁用了 `fable`，已排除）——**只在池内路由，不要改成在整个实时 catalog 上选**。
+现役只有 `CLAUDE_ROUTING`（per-purpose → Claude 模型别名）；`CURSOR_ROUTING`/`MODEL_POOL` 随 Cursor 冻结而**休眠**（保留不删）。`routingFor`/`resolverFor` 产出 `runNode` 用的 `resolveModel`。**act 节点（execute/test）至少 sonnet**——别用 haiku 跑自主多轮开发；review 也用 sonnet（评审质量定流水线可靠性）；think 的 plan/control 用 opus，validate 用 haiku。`CLAUDE_POOL` 是 allowlist（admin 禁用了 `fable`，已排除）——**只在池内路由**。
 
 ### HTTP 壳 `backend/src/routes`
-SK 配置、模型目录（`GET /api/models?provider=`）、流水线运行（`POST` + `GET /api/run/pipeline/stream` 的 SSE）。run 路由负责装配 `Sender`（真 `provider.send`，dryRun 时用 mock）+ 路由 resolver + hooks，交给 `runPipeline`。
+SK 配置、模型目录（`GET /api/models?provider=`）、流水线运行（`POST` + `GET /api/run/pipeline/stream` 的 SSE）。run 路由装配 **`send`（think）+ `act`（act-runner，绑定飞书 `approve`）+ `verify`（独立校验器）** + 路由 resolver + hooks，交给 `runPipeline`；dryRun 用 mock。**默认 `provider="claude-agent"`，传 `cursor` 直接拒绝（已冻结）。**
 
 ### 前端 `frontend/src`
-`App.vue` 两栏布局（左配置 / 右结果）；`composables/useRun.ts` 持有共享的 SSE 运行态 + 打字机队列；`components/` 下 WorkflowForm（左）/ WorkflowResults（右）/ SkConfig，以及一套 `Base*` 设计组件（BaseCard / Button / Input / Select / Tag、StatusBadge）。**设计层的唯一来源 = `Base*` 组件 + `lib/format.ts`（语义色集中在 `lib/semantic-colors.ts`）**；加 UI 时复用它们，别再散写内联 Tailwind 或另造全局 CSS 类。
+**设备分流外壳**：`App.vue` 只创建共享态（`useRun` SSE 运行态 + 打字机队列、`useWorkflowForm` 表单态、`useDevice` 视图判定）并按设备分发到 `layouts/DesktopApp.vue`（两栏：左配置 / 右结果）或 `mobile/MobileApp.vue`（三页 Tab + 底栏）。两版**共享同一份态**，切换不丢进度。桌面用 `components/` 下 WorkflowForm / WorkflowResults / SkConfig；H5 用 `mobile/MobileForm` / `MobileResults`（同 composable、各自展示层）。`useModels` 拉模型目录+路由池，`useTheme` 管明/暗/自动换肤。
+
+**设计语言 = 暖色账本 / Anthropic 编辑风（取自 `~/projects/carter_book`）**：暖羊皮纸底 + terracotta `#c96442` 单点品牌色 + 账本红绿 + 暖色暗夜；三字体 Source Serif 4（标题/数字/正文）· Inter（UI/大写宽字距标签）· JetBrains Mono（代码/ID）；**发丝线代替阴影**、圆角 ≤12px。**单一来源 = `style.css`**：`:root` CSS 变量（`[data-theme=dark]` 切换即整站换肤）+ 编辑感工具类（`.kicker` / `.section-label`(ornament+caps+rule) / `.label-caps` / `.seq` / `.tone-*` chip 调色）。`tailwind.config.js` 把语义色绑到这些变量（`bg-surface`/`text-ink`/`border-hair`/`text-brand`/`bg-up`…），组件用这些语义类 + 工具类拼装；`lib/format.ts`→`semantic-colors.ts` 把 tier/kind/diff 映射成 `.tone-*`。`Base*`（Button/Input/Select/Tag、StatusBadge）是暖色基件；`BaseCard` 现已被编辑风的 section+发丝线取代、暂未使用。**别散写冷色 Tailwind（slate/violet…）或加阴影。**
 
 ## 约定与坑
 

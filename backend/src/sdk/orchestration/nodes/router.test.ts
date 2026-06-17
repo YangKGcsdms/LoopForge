@@ -111,12 +111,12 @@ describe("两套独立路由策略（不收敛，各用各的模型名）", () =
     assert.equal(CURSOR_ROUTING.review, "claude-sonnet-4-6");
     assert.equal(CURSOR_ROUTING.test, "kimi-k2.5");
   });
-  it("CLAUDE_ROUTING：plan→opus、execute/validate/test→haiku、review→sonnet（全名）", () => {
+  it("CLAUDE_ROUTING：plan→opus、execute/test/review→sonnet(act 别用 haiku)、validate→haiku（全名）", () => {
     assert.equal(CLAUDE_ROUTING.plan, "claude-opus-4-8");
-    assert.equal(CLAUDE_ROUTING.execute, "claude-haiku-4-5");
-    assert.equal(CLAUDE_ROUTING.validate, "claude-haiku-4-5");
+    assert.equal(CLAUDE_ROUTING.execute, "claude-sonnet-4-6"); // act 节点，至少 sonnet
+    assert.equal(CLAUDE_ROUTING.validate, "claude-haiku-4-5"); // 难度评估这类 think 小活
     assert.equal(CLAUDE_ROUTING.review, "claude-sonnet-4-6");
-    assert.equal(CLAUDE_ROUTING.test, "claude-haiku-4-5");
+    assert.equal(CLAUDE_ROUTING.test, "claude-sonnet-4-6"); // act 节点
   });
   it("routingFor 按 provider 选表", () => {
     assert.equal(routingFor("cursor"), CURSOR_ROUTING);
@@ -128,12 +128,12 @@ describe("两套独立路由策略（不收敛，各用各的模型名）", () =
     assert.equal(rc({ id: "y", kind: "producer" }).id, "composer-2.5");
     assert.equal(rc({ id: "z", kind: "evaluator" }).id, "claude-sonnet-4-6");
     const ra = resolverFor("claude-agent");
-    assert.equal(ra({ id: "x", kind: "producer", purpose: "execute" }).id, "claude-haiku-4-5");
+    assert.equal(ra({ id: "x", kind: "producer", purpose: "execute" }).id, "claude-sonnet-4-6");
     assert.equal(ra({ id: "z", kind: "evaluator" }).id, "claude-sonnet-4-6");
   });
   it("routingScheme(provider) 给出该 provider 的完整方案", () => {
     assert.equal(routingScheme("cursor").execute, "composer-2.5");
-    assert.equal(routingScheme("claude-agent").execute, "claude-haiku-4-5");
+    assert.equal(routingScheme("claude-agent").execute, "claude-sonnet-4-6");
   });
   it("难度评估节点不写死 provider 专属模型（交给路由，避免对 Claude 用了 composer）", () => {
     assert.equal(difficultyAssessor.model, undefined);

@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { providerSender } from "./sender.js";
+import { providerSender, providerActSender } from "./sender.js";
 import type { SdkProvider } from "../provider.js";
-import type { AgentSendOptions } from "../types.js";
+import type { AgentActOptions, AgentSendOptions, ToolApprover } from "../types.js";
 
 describe("providerSender", () => {
   it("合并 system+user 成单条 prompt，透传 cwd/model/apiKey，回填结果", async () => {
@@ -45,5 +45,57 @@ describe("providerSender", () => {
     };
     const res = await providerSender(provider, "k")({ system: "", user: "", model: { id: "req-model" } });
     assert.deepEqual(res.model, { id: "req-model" });
+  });
+
+  it("think-sender 强制 readOnly=true 且不带 approve（think 只读、永不审批）", async () => {
+    let captured: AgentSendOptions | undefined;
+    const provider: Pick<SdkProvider, "send"> = {
+      async send(o) {
+        captured = o;
+        return { result: "", durationMs: 1 };
+      },
+    };
+    await providerSender(provider, "k")({ system: "S", user: "U" });
+    assert.equal(captured?.readOnly, true);
+    assert.equal(captured?.approve, undefined);
+  });
+});
+
+describe("providerActSender", () => {
+  it("调 provider.act，绑 approve/allowedTools，回填 evidence", async () => {
+    let captured: AgentActOptions | undefined;
+    const approve: ToolApprover = async () => ({ allow: true });
+    const provider: Pick<SdkProvider, "send" | "act"> = {
+      async send() {
+        return { result: "", durationMs: 1 };
+      },
+      async act(o) {
+        captured = o;
+        return {
+          result: "R",
+          durationMs: 2,
+          evidence: { toolCalls: [{ tool: "Bash", input: {}, ok: true }], filesTouched: ["x.ts"], bashRuns: [] },
+        };
+      },
+    };
+    const r = await providerActSender(provider, "k", { allowedTools: ["Read"], approve })({ system: "S", user: "U", cwd: "/c" });
+    assert.equal(captured?.cwd, "/c");
+    assert.deepEqual(captured?.allowedTools, ["Read"]);
+    assert.equal(typeof captured?.approve, "function");
+    assert.deepEqual(r.evidence.filesTouched, ["x.ts"]);
+    assert.equal(r.result, "R");
+  });
+
+  it("provider 没实现 act → 降级走 send，evidence 为空", async () => {
+    let sendCalled = false;
+    const provider: Pick<SdkProvider, "send" | "act"> = {
+      async send() {
+        sendCalled = true;
+        return { result: "R", durationMs: 1 };
+      },
+    };
+    const r = await providerActSender(provider, "k")({ system: "", user: "U", cwd: "/c" });
+    assert.equal(sendCalled, true);
+    assert.deepEqual(r.evidence, { toolCalls: [], filesTouched: [], bashRuns: [] });
   });
 });

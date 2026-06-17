@@ -95,10 +95,11 @@ export const CURSOR_ROUTING: Record<NodePurpose, string> = {
 export const CLAUDE_ROUTING: Record<NodePurpose, string> = {
   plan: "claude-opus-4-8",
   control: "claude-opus-4-8",
-  execute: "claude-haiku-4-5",
-  validate: "claude-haiku-4-5",
+  // execute/test 是 act 节点（自主多轮改代码/写测试）——别用 haiku，至少 sonnet。
+  execute: "claude-sonnet-4-6",
+  validate: "claude-haiku-4-5", // 难度评估这类 think 小活才用 haiku
   review: "claude-sonnet-4-6",
-  test: "claude-haiku-4-5",
+  test: "claude-sonnet-4-6",
 };
 
 /** 按 provider 选路由策略。 */

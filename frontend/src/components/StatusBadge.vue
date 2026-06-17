@@ -6,11 +6,11 @@ export type StatusType = "running" | "completed" | "error" | "pending" | "idle";
 export interface Props {
   /** 状态类型：运行中/完成/错误/等待中/空闲 */
   status: StatusType;
-  /** 自定义文本内容，默认使用状态值本身 */
+  /** 自定义文本内容，默认使用状态名 */
   label?: string;
   /** 是否禁用交互 */
   disabled?: boolean;
-  /** 是否为紧凑尺寸 */
+  /** 紧凑尺寸 */
   compact?: boolean;
 }
 
@@ -19,77 +19,39 @@ const props = withDefaults(defineProps<Props>(), {
   compact: false,
 });
 
-const statusConfig = {
-  running: {
-    bg: "bg-sky-100",
-    text: "text-sky-800",
-    border: "border-sky-300",
-    dot: "bg-sky-600",
-    label: "运行中",
-  },
-  completed: {
-    bg: "bg-emerald-100",
-    text: "text-emerald-800",
-    border: "border-emerald-300",
-    dot: "bg-emerald-600",
-    label: "完成",
-  },
-  error: {
-    bg: "bg-rose-100",
-    text: "text-rose-800",
-    border: "border-rose-300",
-    dot: "bg-rose-600",
-    label: "错误",
-  },
-  pending: {
-    bg: "bg-amber-100",
-    text: "text-amber-800",
-    border: "border-amber-300",
-    dot: "bg-amber-600",
-    label: "等待中",
-  },
-  idle: {
-    bg: "bg-slate-100",
-    text: "text-slate-700",
-    border: "border-slate-300",
-    dot: "bg-slate-600",
-    label: "空闲",
-  },
+// 暖色账本语义：运行=terracotta，完成=账本绿，错误=账本红，等待=琥珀，空闲=墨灰
+const statusConfig: Record<StatusType, { dot: string; text: string; label: string }> = {
+  running: { dot: "bg-brand", text: "text-brand-ink", label: "运行中" },
+  completed: { dot: "bg-up", text: "text-up", label: "完成" },
+  error: { dot: "bg-down", text: "text-down", label: "错误" },
+  pending: { dot: "bg-acc-amber", text: "text-acc-amber", label: "等待中" },
+  idle: { dot: "bg-ink3", text: "text-ink3", label: "空闲" },
 };
 
 const config = computed(() => statusConfig[props.status]);
-
 const displayLabel = computed(() => props.label || config.value.label);
-
-const containerClass = computed(() => [
-  "inline-flex items-center gap-2 rounded-full border transition-all duration-150",
-  props.compact ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm",
-  config.value.bg,
-  config.value.text,
-  config.value.border,
-  // Disabled state
-  props.disabled && "opacity-60 cursor-not-allowed",
-  // Hover/Focus only when enabled
-  !props.disabled && "hover:shadow-sm focus-within:ring-2 focus-within:ring-offset-1",
-]);
-
-const dotClass = computed(() => [
-  "inline-block rounded-full animate-pulse",
-  props.compact ? "h-1.5 w-1.5" : "h-2 w-2",
-  config.value.dot,
-  // Only animate for running status
-  props.status !== "running" && "animate-none",
-]);
 </script>
 
 <template>
-  <div
-    :class="containerClass"
+  <span
+    :class="[
+      'inline-flex items-center gap-1.5 font-medium uppercase tracking-caps',
+      compact ? 'text-[10px]' : 'text-[11px]',
+      config.text,
+      disabled && 'opacity-60',
+    ]"
     :aria-busy="status === 'running'"
-    :aria-disabled="disabled"
     role="status"
   >
-    <span :class="dotClass" aria-hidden="true" />
-    <span class="font-medium">{{ displayLabel }}</span>
-  </div>
+    <span
+      :class="[
+        'inline-block rounded-full',
+        compact ? 'h-1.5 w-1.5' : 'h-2 w-2',
+        config.dot,
+        status === 'running' && 'animate-pulse',
+      ]"
+      aria-hidden="true"
+    />
+    {{ displayLabel }}
+  </span>
 </template>

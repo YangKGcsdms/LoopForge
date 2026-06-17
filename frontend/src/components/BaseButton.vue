@@ -1,6 +1,6 @@
 <script setup lang="ts">
 export interface Props {
-  /** 按钮变体 */
+  /** 按钮变体：primary=terracotta 实心 / secondary=发丝线 / danger / ghost */
   variant?: "primary" | "secondary" | "danger" | "ghost";
   /** 按钮尺寸 */
   size?: "sm" | "md" | "lg";
@@ -20,9 +20,7 @@ withDefaults(defineProps<Props>(), {
   type: "button",
 });
 
-const emit = defineEmits<{
-  click: [event: MouseEvent];
-}>();
+const emit = defineEmits<{ click: [event: MouseEvent] }>();
 </script>
 
 <template>
@@ -30,19 +28,19 @@ const emit = defineEmits<{
     :type="type"
     :disabled="disabled"
     :class="[
-      'inline-flex items-center justify-center font-medium transition-all duration-150',
-      'focus:outline-none focus:ring-2 focus:ring-offset-2',
-      'disabled:opacity-50 disabled:cursor-not-allowed',
+      'inline-flex items-center justify-center gap-2 rounded-md border font-medium transition-colors duration-150',
+      'focus:outline-none focus-visible:ring-1 focus-visible:ring-brand',
+      'disabled:cursor-not-allowed disabled:opacity-50',
       fullWidth && 'w-full',
-      // Size variants
-      size === 'sm' && 'px-2.5 py-1.5 text-sm rounded-md',
-      size === 'md' && 'px-4 py-2 text-sm rounded-lg',
-      size === 'lg' && 'px-6 py-3 text-base rounded-lg',
-      // Color variants
-      variant === 'primary' && 'bg-slate-900 text-white hover:bg-slate-700 focus:ring-violet-500',
-      variant === 'secondary' && 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 focus:ring-violet-500',
-      variant === 'danger' && 'border border-rose-300 text-rose-700 hover:bg-rose-50 focus:ring-rose-500',
-      variant === 'ghost' && 'text-slate-700 hover:bg-slate-100 focus:ring-violet-500',
+      // 尺寸（编辑风：手感高一点）
+      size === 'sm' && 'h-9 px-3 text-[13px]',
+      size === 'md' && 'h-11 px-4 text-sm',
+      size === 'lg' && 'h-12 px-5 text-base',
+      // 变体
+      variant === 'primary' && 'border-brand bg-brand text-[#faf5f0] hover:bg-brand-ink hover:border-brand-ink',
+      variant === 'secondary' && 'border-hair-strong bg-transparent text-ink hover:bg-surface2',
+      variant === 'danger' && 'border-down bg-transparent text-down hover:bg-down-bg',
+      variant === 'ghost' && 'border-transparent bg-transparent text-ink2 hover:bg-surface2 hover:text-ink',
     ]"
     @click="emit('click', $event)"
   >

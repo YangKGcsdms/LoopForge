@@ -5,8 +5,8 @@ import { CursorProvider } from "./cursorProvider.js";
 const p = new CursorProvider();
 
 describe("CursorProvider", () => {
-  it("info() 返回 cursor 元信息", () => {
-    assert.deepEqual(p.info(), { id: "cursor", displayName: "Cursor SDK", supported: true });
+  it("info() 返回 cursor 元信息（已冻结：supported=false）", () => {
+    assert.deepEqual(p.info(), { id: "cursor", displayName: "Cursor SDK", supported: false, note: "已冻结：项目只走 Claude 路线" });
   });
 
   it("validateCredential('') 不联网，直接判 invalid", async () => {

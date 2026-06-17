@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { makeMockSender } from "./mock.js";
+import { makeMockSender, makeMockActSender } from "./mock.js";
 
 async function call(send: ReturnType<typeof makeMockSender>, system: string, user = "") {
   return JSON.parse((await send({ system, user })).result);
@@ -60,5 +60,14 @@ describe("makeMockSender 开发小 loop 带矫正", () => {
     );
     assert.equal(fix.taskId, "T2");
     assert.equal(fix.testsRun.failed, 0);
+  });
+});
+
+describe("makeMockActSender", () => {
+  it("套 mock send、回填空证据，仍识别 devStep 角色", async () => {
+    const act = makeMockActSender(makeMockSender());
+    const r = await act({ system: "你是开发工程师，实现给定子任务并自检。", user: "子任务[T1]：x\n验收标准：y", cwd: "/w" });
+    assert.equal(JSON.parse(r.result).taskId, "T1");
+    assert.deepEqual(r.evidence, { toolCalls: [], filesTouched: [], bashRuns: [] });
   });
 });

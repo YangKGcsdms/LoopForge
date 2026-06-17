@@ -35,11 +35,12 @@ describe("API 路由", () => {
     assert.equal(j.ok, true);
   });
 
-  it("GET /api/config/providers → cursor supported", async () => {
+  it("GET /api/config/providers → claude-agent supported，cursor 已冻结", async () => {
     const j = (await (await fetch(`${base}/api/config/providers`)).json()) as {
       providers: Array<{ id: string; supported: boolean }>;
     };
-    assert.ok(j.providers.find((p) => p.id === "cursor")?.supported);
+    assert.ok(j.providers.find((p) => p.id === "claude-agent")?.supported);
+    assert.equal(j.providers.find((p) => p.id === "cursor")?.supported, false);
   });
 
   it("GET /api/config/sk?provider=cursor → 200，带 configured 字段（只读）", async () => {

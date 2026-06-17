@@ -6,7 +6,7 @@
  * [2] 真实 cursor provider（未装 @cursor/sdk）：证明真链路已接通且优雅降级（节点 status=error）。
  */
 
-import { runNode, runLoop, logHook, providerSender, cursorSender, type LoopSpec } from "../index.js";
+import { runNode, runLoop, logHook, providerSender, senderFor, type LoopSpec } from "../index.js";
 import type { SdkProvider } from "../../provider.js";
 import {
   decomposeNode,
@@ -80,8 +80,8 @@ console.log("\n[1] mock-provider 路径");
 console.log("status:", loop.status, "| iterations:", loop.iterations);
 console.log("最终子任务:", loop.output?.subtasks.map((s) => `${s.id}:${s.estimateHours}h`));
 
-// ---------- [2] 真实 cursor provider（未装 SDK）----------
-const real = cursorSender("no-real-key", { defaultCwd: process.cwd() });
+// ---------- [2] 真实 claude provider（think 路径）----------
+const real = senderFor("claude-agent", "no-real-key", { defaultCwd: process.cwd() });
 const node = await runNode(
   decomposeNode,
   { requirement: "随便一个需求", goal: "随便一个目标" },
@@ -89,6 +89,6 @@ const node = await runNode(
   { send: real },
 );
 
-console.log("\n[2] 真实 cursor 路径（未装 @cursor/sdk）");
+console.log("\n[2] 真实 claude think 路径");
 console.log("status:", node.status);
 console.log("error:", node.error);

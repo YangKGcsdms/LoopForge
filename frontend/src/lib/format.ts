@@ -1,32 +1,20 @@
 /** 工作流页的纯展示逻辑：节点输出 → 可读文本 + 档位/类型/难度的样式映射。抽出以便单测。 */
 
-import { tierColors, kindColors, diffColors, getTokenClasses } from "./semantic-colors";
+import { tierTone, kindTone, diffTone } from "./semantic-colors";
 
-/**
- * 获取模型档位的语义色 class
- * 使用统一 token 映射代替硬编码色值
- */
+/** 模型档位 → 暖色 chip 色调类（.tone-*）。 */
 export function tierClass(tier: string): string {
-  const token = tierColors[tier] || tierColors.default;
-  return getTokenClasses(token);
+  return tierTone[tier] || tierTone.default;
 }
 
-/**
- * 获取节点类型的语义色 class
- * 使用统一 token 映射代替硬编码色值
- */
+/** 节点类型 → 暖色 chip 色调类（.tone-*）。 */
 export function kindClass(kind: string): string {
-  const token = kindColors[kind] || kindColors.default;
-  return getTokenClasses(token);
+  return kindTone[kind] || kindTone.default;
 }
 
-/**
- * 获取难度的语义色 class
- * 使用统一 token 映射代替硬编码色值
- */
+/** 难度 → 暖色 chip 色调类（.tone-*）。 */
 export function diffClass(v: string): string {
-  const token = diffColors[v] || diffColors.default;
-  return getTokenClasses(token);
+  return diffTone[v] || diffTone.default;
 }
 
 /** 把节点输出渲染成可读文本（供打字机逐字显示）。 */
