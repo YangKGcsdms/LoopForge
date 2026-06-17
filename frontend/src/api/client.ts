@@ -87,6 +87,20 @@ export interface Preferences {
   provider: string;
 }
 
+export interface FsEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
+export interface FsListResult {
+  path: string;
+  parent: string | null;
+  isRoot: boolean;
+  home: string;
+  entries: FsEntry[];
+}
+
 export const api = {
   listProviders: () => http<{ providers: ProviderInfo[] }>("/api/config/providers"),
 
@@ -117,6 +131,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ provider, apiKey }),
     }),
+
+  listDir: (path?: string) =>
+    http<FsListResult>(`/api/fs/list${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 
   getModels: (provider = "cursor") =>
     http<ModelsResponse>(`/api/models?provider=${encodeURIComponent(provider)}`),
