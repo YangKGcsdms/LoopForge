@@ -7,6 +7,7 @@
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
+import { randomUUID } from "node:crypto";
 import type { ToolApprovalRequest, ToolApprovalResult, ToolApprover } from "../types.js";
 
 export interface FeishuApproverConfig {
@@ -23,6 +24,8 @@ export interface FeishuApprover {
   approve: ToolApprover;
   /** 启动长连接，开始接收卡片回调。整条服务起一次即可。 */
   start(): void;
+  /** 关闭长连接并把挂起审批全部拒绝（配置变更重建时调用）。 */
+  stop(): void;
   /** 待处理审批数（调试用）。 */
   pendingCount(): number;
 }
@@ -117,7 +120,7 @@ export function createFeishuApprover(cfg: FeishuApproverConfig): FeishuApprover 
       client.im.message
         .create({
           params: { receive_id_type: cfg.receiveIdType },
-          data: { receive_id: cfg.receiveId, msg_type: "interactive", content: JSON.stringify(card) },
+          data: { receive_id: cfg.receiveId, msg_type: "interactive", content: JSON.stringify(card), uuid: randomUUID() },
         })
         .catch((err: unknown) => {
           // 发卡失败 → 直接拒绝并说明原因，别让 loop 永久挂起
@@ -125,5 +128,50 @@ export function createFeishuApprover(cfg: FeishuApproverConfig): FeishuApprover 
         });
     });
 
-  return { approve, start, pendingCount: () => pending.size };
+  function stop(): void {
+    // 把挂起审批全部拒绝（别让旧 loop 永久等待），再尽力关闭长连接。
+    for (const reqId of [...pending.keys()]) settle(reqId, { allow: false, reason: "审批通道已重建/关闭" });
+    try {
+      (wsClient as unknown as { stop?: () => void }).stop?.();
+    } catch {
+      /* best-effort：SDK 无 stop 则忽略 */
+    }
+  }
+
+  return { approve, start, stop, pendingCount: () => pending.size };
+}
+
+/** 测试卡：确认 aksk + receive_id 能把卡片发到目标飞书（不等回调，仅验证发送链路）。 */
+function buildTestCard() {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "green", title: { tag: "plain_text", content: "✅ 飞书审批连通测试" } },
+    elements: [
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content:
+            "**LoopForge 已接通飞书。**\n后续 act 节点跑 **Bash 等需审批的工具**时，会把审批卡发到这里，点「✅ 同意 / ⛔ 拒绝」即可远程裁决（走长连接回调，无需公网 webhook）。",
+        },
+      },
+    ],
+  };
+}
+
+/** 真发一张测试卡，验证 aksk/receive_id 配置可用。返回是否成功 + 说明。 */
+export async function sendFeishuTest(cfg: FeishuApproverConfig): Promise<{ ok: boolean; detail: string }> {
+  const client = new lark.Client({ appId: cfg.appId, appSecret: cfg.appSecret });
+  try {
+    const r = (await client.im.message.create({
+      params: { receive_id_type: cfg.receiveIdType },
+      data: { receive_id: cfg.receiveId, msg_type: "interactive", content: JSON.stringify(buildTestCard()), uuid: randomUUID() },
+    })) as { code?: number; msg?: string };
+    if (typeof r?.code === "number" && r.code !== 0) {
+      return { ok: false, detail: `飞书返回 code=${r.code}：${r.msg ?? "见飞书开放平台错误码"}` };
+    }
+    return { ok: true, detail: `测试卡片已发往 ${cfg.receiveIdType}=${cfg.receiveId}，请到飞书查收。` };
+  } catch (err) {
+    return { ok: false, detail: `发送失败：${err instanceof Error ? err.message : String(err)}` };
+  }
 }

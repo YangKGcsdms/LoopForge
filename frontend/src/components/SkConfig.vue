@@ -5,12 +5,13 @@
  * 刷新/切 Agent 时自动探测登录态，结果通过 validated 事件抛给操作台 tab 显示状态点。
  */
 import { computed, onMounted, ref } from "vue";
-import { api, type ProviderInfo, type SkStatus } from "../api/client";
+import { api, type ProviderInfo, type SkStatus, type FeishuStatus } from "../api/client";
 import { tierClass } from "../lib/format";
 import { useModels } from "../composables/useModels";
 import { type WorkflowForm } from "../composables/useWorkflowForm";
 import BaseButton from "./BaseButton.vue";
 import BaseInput from "./BaseInput.vue";
+import BaseSelect from "./BaseSelect.vue";
 import BaseTag from "./BaseTag.vue";
 
 type Tone = "idle" | "ok" | "error" | "info";
@@ -32,6 +33,17 @@ const message = ref("");
 const tone = ref<Tone>("idle");
 
 const { models, modelSource, modelNote, poolRouting, loadError, load } = useModels();
+
+// ── 飞书审批配置 ──
+const feishu = ref<FeishuStatus | null>(null);
+const fsAppId = ref("");
+const fsAppSecret = ref("");
+const fsReceiveId = ref("");
+const fsReceiveIdType = ref("user_id");
+const fsBusy = ref<null | "save" | "test" | "clear">(null);
+const fsMessage = ref("");
+const fsTone = ref<Tone>("idle");
+const receiveIdTypes = ["user_id", "open_id", "union_id", "chat_id", "email"];
 
 const isClaude = computed(() => provider.value === "claude-agent");
 const keyPlaceholder = computed(() =>
@@ -57,8 +69,8 @@ const routingRows = computed(() =>
     : [],
 );
 
-const messageClass = computed(() => {
-  switch (tone.value) {
+function toneClass(t: Tone): string {
+  switch (t) {
     case "ok":
       return "bg-up-bg text-up border-hair";
     case "error":
@@ -68,11 +80,18 @@ const messageClass = computed(() => {
     default:
       return "hidden";
   }
-});
+}
+const messageClass = computed(() => toneClass(tone.value));
+const fsMessageClass = computed(() => toneClass(fsTone.value));
 
 function notify(text: string, t: Tone) {
   message.value = text;
   tone.value = t;
+}
+
+function fsNotify(text: string, t: Tone) {
+  fsMessage.value = text;
+  fsTone.value = t;
 }
 
 async function loadProviders() {
@@ -158,9 +177,62 @@ function selectAgent(id: string) {
   void refreshAgent();
 }
 
+async function loadFeishu() {
+  try {
+    feishu.value = await api.getFeishuStatus();
+    if (feishu.value?.receiveIdType) fsReceiveIdType.value = feishu.value.receiveIdType;
+  } catch {
+    /* 状态读不到不影响其它配置 */
+  }
+}
+
+async function saveFeishu() {
+  fsBusy.value = "save";
+  try {
+    feishu.value = await api.saveFeishu({
+      appId: fsAppId.value.trim() || undefined,
+      appSecret: fsAppSecret.value.trim() || undefined,
+      receiveId: fsReceiveId.value.trim() || undefined,
+      receiveIdType: fsReceiveIdType.value,
+    });
+    fsAppSecret.value = ""; // 保存后不在内存里留 secret
+    fsNotify("飞书配置已保存，下次运行即生效。", "ok");
+  } catch (err) {
+    fsNotify(`保存失败：${(err as Error).message}`, "error");
+  } finally {
+    fsBusy.value = null;
+  }
+}
+
+async function testFeishu() {
+  fsBusy.value = "test";
+  try {
+    const r = await api.testFeishu();
+    fsNotify(r.detail, r.ok ? "ok" : "error");
+  } catch (err) {
+    fsNotify(`测试失败：${(err as Error).message}`, "error");
+  } finally {
+    fsBusy.value = null;
+  }
+}
+
+async function clearFeishu() {
+  fsBusy.value = "clear";
+  try {
+    await api.clearFeishu();
+    feishu.value = await api.getFeishuStatus();
+    fsNotify("已清除飞书配置。", "info");
+  } catch (err) {
+    fsNotify(`清除失败：${(err as Error).message}`, "error");
+  } finally {
+    fsBusy.value = null;
+  }
+}
+
 onMounted(async () => {
   await loadProviders();
   await refreshAgent();
+  await loadFeishu();
 });
 </script>
 
@@ -287,6 +359,76 @@ onMounted(async () => {
       <!-- 消息提示 -->
       <div v-if="tone !== 'idle'" :class="messageClass" class="mt-5 rounded-md border px-4 py-3 text-[13px]">
         {{ message }}
+      </div>
+    </div>
+
+    <!-- ── 飞书审批 ── -->
+    <div class="border-t border-hair pt-7">
+      <div class="section-label mb-4">
+        <span class="ornament">·</span>
+        <span class="caps">飞书审批 · Feishu Approval</span>
+        <span class="rule"></span>
+        <span v-if="feishu?.configured" class="label-caps shrink-0 normal-case tracking-wide text-up">已配置</span>
+      </div>
+      <p class="mb-4 flex items-start gap-1.5 text-[12px] leading-relaxed text-ink3">
+        <span class="mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-brand"></span>
+        act 节点跑 Bash 等需审批的工具时，会发互动卡到飞书，点「同意 / 拒绝」远程裁决（走长连接回调，无需公网 webhook）。
+      </p>
+
+      <!-- 当前状态 -->
+      <div
+        v-if="feishu?.configured"
+        class="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-hair-soft py-3 text-sm"
+      >
+        <span class="label-caps">当前</span>
+        <span class="font-mono text-[12px] text-ink2">App {{ feishu.appId }}</span>
+        <span class="font-mono text-[12px] text-ink2">· {{ feishu.receiveIdType }}={{ feishu.receiveId }}</span>
+        <BaseTag v-if="feishu.source === 'env'" color="tone-mute">来自环境变量</BaseTag>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="label-caps mb-1.5 block">App ID</label>
+          <BaseInput v-model="fsAppId" placeholder="cli_xxxxxxxx" class="font-mono" fullWidth />
+        </div>
+        <div>
+          <label class="label-caps mb-1.5 block">App Secret</label>
+          <BaseInput
+            v-model="fsAppSecret"
+            type="password"
+            placeholder="保存后不回显；留空＝不改动已存的"
+            class="font-mono"
+            fullWidth
+          />
+        </div>
+        <div class="flex gap-2">
+          <div class="min-w-0 flex-1">
+            <label class="label-caps mb-1.5 block">Receive ID</label>
+            <BaseInput v-model="fsReceiveId" placeholder="你的飞书用户 id" class="font-mono" fullWidth />
+          </div>
+          <div class="w-32 shrink-0">
+            <label class="label-caps mb-1.5 block">类型</label>
+            <BaseSelect v-model="fsReceiveIdType" fullWidth>
+              <option v-for="t in receiveIdTypes" :key="t" :value="t">{{ t }}</option>
+            </BaseSelect>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2.5">
+        <BaseButton type="button" variant="primary" :disabled="fsBusy !== null" @click="saveFeishu">
+          {{ fsBusy === "save" ? "保存中…" : "保存" }}
+        </BaseButton>
+        <BaseButton type="button" variant="secondary" :disabled="fsBusy !== null" @click="testFeishu">
+          {{ fsBusy === "test" ? "发送中…" : "发送测试卡" }}
+        </BaseButton>
+        <BaseButton type="button" variant="danger" class="ml-auto" :disabled="fsBusy !== null" @click="clearFeishu">
+          {{ fsBusy === "clear" ? "清除中…" : "清除" }}
+        </BaseButton>
+      </div>
+
+      <div v-if="fsTone !== 'idle'" :class="fsMessageClass" class="mt-4 rounded-md border px-4 py-3 text-[13px]">
+        {{ fsMessage }}
       </div>
     </div>
   </section>

@@ -98,7 +98,7 @@ async function resolveDeps(
     // think 节点：只读单发。
     send: senderFor(provider, key, { defaultCwd: cwd }),
     // act 节点：真工具 + 安全工具自动放行，Bash 等走飞书长连接审批。
-    act: actSenderFor(provider, key, { defaultCwd: cwd, allowedTools: SAFE_TOOLS, approve: runtimeApprover() }),
+    act: actSenderFor(provider, key, { defaultCwd: cwd, allowedTools: SAFE_TOOLS, approve: await runtimeApprover() }),
     // act 后独立校验：git diff + 请求里配置的 test/typecheck 命令（拿地面真值）。
     verify: makeVerifier({ checks: verifyChecks }),
   };

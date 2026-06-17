@@ -128,8 +128,32 @@ export interface FsListResult {
   entries: FsEntry[];
 }
 
+export interface FeishuStatus {
+  configured: boolean;
+  appId?: string;
+  receiveId?: string;
+  receiveIdType?: string;
+  source?: "store" | "env";
+}
+
+export interface FeishuConfigPatch {
+  appId?: string;
+  appSecret?: string;
+  receiveId?: string;
+  receiveIdType?: string;
+}
+
 export const api = {
   listProviders: () => http<{ providers: ProviderInfo[] }>("/api/config/providers"),
+
+  getFeishuStatus: () => http<FeishuStatus>("/api/config/feishu"),
+
+  saveFeishu: (patch: FeishuConfigPatch) =>
+    http<FeishuStatus & { ok: boolean }>("/api/config/feishu", { method: "PUT", body: JSON.stringify(patch) }),
+
+  clearFeishu: () => http<{ ok: boolean }>("/api/config/feishu", { method: "DELETE" }),
+
+  testFeishu: () => http<{ ok: boolean; detail: string }>("/api/config/feishu/test", { method: "POST" }),
 
   getPreferences: () => http<Preferences>("/api/config/preferences"),
 

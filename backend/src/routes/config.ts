@@ -2,6 +2,8 @@ import { Router } from "express";
 import { getProvider, listProviderInfos } from "../sdk/index.js";
 import { deleteApiKey, getApiKey, getStatus, setApiKey } from "../config/store.js";
 import { getPreferences, setPreferences } from "../config/prefs.js";
+import { clearFeishuConfig, getFeishuConfig, getFeishuStatus, setFeishuConfig } from "../config/feishu.js";
+import { sendFeishuTest } from "../sdk/approval/index.js";
 
 export const configRouter = Router();
 
@@ -77,6 +79,33 @@ configRouter.post("/sk/validate", async (req, res) => {
   const keyToCheck = typeof apiKey === "string" && apiKey.trim() ? apiKey.trim() : (await getApiKey(provider)) ?? "";
   const result = await impl.validateCredential(keyToCheck);
   res.json({ provider, ...result });
+});
+
+/** 飞书审批配置：读取脱敏状态。 */
+configRouter.get("/feishu", async (_req, res) => {
+  res.json(await getFeishuStatus());
+});
+
+/** 飞书审批配置：保存三参 + receive_id 类型（存储优先，立即对下次运行生效）。 */
+configRouter.put("/feishu", async (req, res) => {
+  const { appId, appSecret, receiveId, receiveIdType } = req.body ?? {};
+  await setFeishuConfig({ appId, appSecret, receiveId, receiveIdType });
+  res.json({ ok: true, ...(await getFeishuStatus()) });
+});
+
+/** 飞书审批配置：清除。 */
+configRouter.delete("/feishu", async (_req, res) => {
+  await clearFeishuConfig();
+  res.json({ ok: true });
+});
+
+/** 飞书审批：真发一张测试卡，验证 aksk/receive_id 可用。 */
+configRouter.post("/feishu/test", async (_req, res) => {
+  const cfg = await getFeishuConfig();
+  if (!cfg) {
+    return res.status(400).json({ ok: false, detail: "未配置飞书（缺 App ID / Secret / Receive ID）。" });
+  }
+  res.json(await sendFeishuTest(cfg));
 });
 
 /** 拉取某 Provider 的可用模型目录（用已保存的 SK）。 */
