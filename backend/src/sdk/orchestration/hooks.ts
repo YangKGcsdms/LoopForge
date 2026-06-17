@@ -15,11 +15,16 @@ import type {
 } from "./node.js";
 
 /** 落库钩子：节点产出后写一条 NodeRunRecord。 */
-export function persistHook(store: NodeRunStore): NodeHook {
+export function persistHook(store: NodeRunStore, options?: { captureFullData?: boolean; runId?: string }): NodeHook {
   return {
     name: "persist",
     async onOutput(evt: NodeOutputEvent<unknown, unknown>): Promise<void> {
       const { result } = evt;
+
+      // 默认：只记摘要 + 小模型总结，不记完整数据（节省空间）
+      // 可选：captureFullData=true 时才记完整提示词和输入输出
+      const shouldCapture = options?.captureFullData ?? false;
+
       const record: NodeRunRecord = {
         id: randomUUID(),
         nodeId: result.nodeId,
@@ -36,6 +41,23 @@ export function persistHook(store: NodeRunStore): NodeHook {
         requestId: result.requestId,
         durationMs: result.durationMs,
         createdAt: new Date().toISOString(),
+
+        // ===== 新增关联键 =====
+        runId: options?.runId,
+        // stepKey 由调用方在执行 pipeline 步骤时设置
+
+        // ===== 完整提示词与输入输出字段（可选捕获） =====
+        ...(shouldCapture && {
+          promptStatic: evt.prompt.static,
+          promptDynamic: evt.prompt.dynamic,
+          systemPrompt: evt.kind === "producer" || evt.kind === "evaluator" || evt.kind === "gate"
+            ? evt.prompt.static.split("\n")[0]  // 简单启发式提取系统角色（第一行）
+            : undefined,
+          userPrompt: evt.prompt.dynamic,  // 用户提示词 = 动态部分
+          inputFull: typeof evt.input === "string" ? evt.input : JSON.stringify(evt.input),
+          rawOutput: result.raw,
+          outputFull: typeof result.output === "string" ? result.output : JSON.stringify(result.output),
+        }),
       };
       await store.append(record);
     },
