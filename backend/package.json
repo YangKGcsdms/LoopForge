@@ -10,7 +10,12 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
-    "test:live": "node --import tsx --test \"src/**/*.itest.ts\""
+    "test:live": "node --import tsx --test \"src/**/*.itest.ts\"",
+    "unit:local": "node --import tsx src/sdk/orchestration/unit-live.ts",
+    "unit:deepseek": "LF_UNIT_BACKEND=deepseek node --import tsx src/sdk/orchestration/unit-live.ts",
+    "unit:site:local": "LF_UNIT_TASK=site node --import tsx src/sdk/orchestration/unit-live.ts",
+    "unit:site:deepseek": "LF_UNIT_TASK=site LF_UNIT_BACKEND=deepseek node --import tsx src/sdk/orchestration/unit-live.ts",
+    "unit:replay": "node --import tsx src/sdk/orchestration/unit-replay.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.179",

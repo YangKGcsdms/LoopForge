@@ -11,6 +11,9 @@ build/
 .env.local
 *.local
 
+# 最小单元集测产物（可肉眼回看，不入库）
+output/
+
 # logs
 *.log
 npm-debug.log*
