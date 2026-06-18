@@ -15,6 +15,7 @@
     "unit:deepseek": "LF_UNIT_BACKEND=deepseek node --import tsx src/sdk/orchestration/unit-live.ts",
     "unit:site:local": "LF_UNIT_TASK=site node --import tsx src/sdk/orchestration/unit-live.ts",
     "unit:site:deepseek": "LF_UNIT_TASK=site LF_UNIT_BACKEND=deepseek node --import tsx src/sdk/orchestration/unit-live.ts",
+    "unit:run": "node --import tsx src/sdk/orchestration/unit-run.ts",
     "unit:replay": "node --import tsx src/sdk/orchestration/unit-replay.ts"
   },
   "dependencies": {
