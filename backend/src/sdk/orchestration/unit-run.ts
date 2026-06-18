@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { runUnit, type Gate, type UnitArtifact } from "./unit.js";
 import { RunLog } from "./unit-log.js";
 import { resolveBackend, applyEnv, makeLiveExecutor, type BackendId } from "./unit-sdk.js";
+import { runtimeAsker } from "../approval/index.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = path.resolve(HERE, "../../../../output");
@@ -72,6 +73,21 @@ async function main(): Promise<void> {
   const backendId = (process.env.LF_BACKEND as BackendId) || "local";
   const runId = process.env.LF_NAME || `run-${path.basename(cwd)}`;
 
+  // 守卫：LF_CHECK 必须是可执行命令。填一句“描述” → shell 报 command not found(exit 127)，
+  // 那样关令从不真正度量、还会把垃圾反馈喂回去毒化 agent（两次踩坑的真正死因）。先探一次，127 直接拒跑。
+  if (check) {
+    console.log(`预检关令命令：${check}`);
+    const probe = runCheck(check, cwd);
+    if (probe.code === 127) {
+      throw new Error(
+        `LF_CHECK 不是可执行命令（command not found, exit 127）：\n  ${check}\n` +
+          `你大概填了一句“描述”而非命令。请填真能 exit 0/非0 的命令，例如：\n` +
+          `  LF_CHECK="mvn -q -o compile"  ·  LF_CHECK="npm test"  ·  LF_CHECK="cd 子模块 && mvn -q test"`,
+      );
+    }
+    console.log(`预检通过（exit ${probe.code}：命令可执行；非 0 只表示当前未达标，不影响开跑）。`);
+  }
+
   const backend = await resolveBackend(backendId);
   applyEnv(backend.env);
 
@@ -82,13 +98,17 @@ async function main(): Promise<void> {
   const log = new RunLog(path.join(taskDir, "events.jsonl"), true);
   const gitDir = path.join(taskDir, ".shadow-git"); // 影子 git，不碰目标目录的 .git
 
+  // 举手通道：配了飞书则 agent 纠结/含糊时发卡片问你（异步、不阻死）；没配则纯全自动（撞上限即 force-ship）。
+  const ask = await runtimeAsker();
+
   console.log("\n=== 单元包装 · 通用开发 ===");
   console.log(`目录：${cwd}（产物落这）`);
   console.log(`需求：${requirement.split("\n")[0].slice(0, 80)}`);
   console.log(`关令：${check ? `校验命令 \`${check}\`（exit 0 放行，否则反馈续跑）` : "产生改动即放行（无校验命令，单轮）"}`);
+  console.log(`举手：${ask ? "已接飞书 ask_human（含糊/卡住会发卡片问你）" : "未配飞书 → 全自动（agent 纠结也不问）"}`);
   console.log(`后端：${backend.label} · 复盘：output/${runId}/\n`);
 
-  const executor = makeLiveExecutor(sdk, { cwd, model: backend.model, log, gitDir });
+  const executor = makeLiveExecutor(sdk, { cwd, model: backend.model, log, gitDir, ask });
   const gate = makeCheckGate(cwd, check);
 
   const result = await runUnit(
@@ -96,10 +116,11 @@ async function main(): Promise<void> {
     { outDir: OUTPUT_DIR, log, meta: { backend: backend.label, devDir: cwd, check: check ?? null } },
   );
 
-  if (result.status !== "converged") process.exitCode = 1;
+  // 飞书长连接（若启用 ask_human）会吊住事件循环；产物已在 runUnit 内落盘，显式退出。
+  process.exit(result.status === "converged" ? 0 : 1);
 }
 
 main().catch((e) => {
   console.error("运行失败：", e instanceof Error ? e.message : e);
-  process.exitCode = 1;
+  process.exit(1);
 });
