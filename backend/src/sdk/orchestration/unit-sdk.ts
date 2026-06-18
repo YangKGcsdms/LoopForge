@@ -13,9 +13,11 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { z } from "zod";
 import type { Executor, UnitArtifact } from "./unit.js";
 import { RunLog } from "./unit-log.js";
 import { newEvidence, applyMessage, finalizeEvidence } from "../claude/evidence.js";
+import type { AskHuman } from "../types.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEEPSEEK_CFG = path.resolve(HERE, "../../../.data/deepseek.json");
@@ -36,10 +38,48 @@ function resultPreview(content: unknown): string {
   return "";
 }
 
+/**
+ * ask_human MCP 工具 —— 复用飞书 ask 通道（runtimeAsker）：agent 纠结 / 任务含糊（不确定改哪个模块）/
+ * 反复做不下去时主动调它发卡片问人,人点选项的答复回填给 agent 继续。
+ * 不逐工具弹卡（执行器默认 bypassPermissions 全自动）,只在 agent 自己举手时才打扰人——这是"诚实举手"通道。
+ */
+function makeAskServer(
+  sdk: any,
+  ask: AskHuman,
+  cwd: string,
+  log: RunLog,
+): { mcpServers: Record<string, unknown>; toolName: string } {
+  const tool = sdk.tool(
+    "ask_human",
+    "当你遇到方案分叉、缺少关键信息（比如该改哪个模块/文件还不确定）、或反复尝试仍做不下去、必须人来拍板时，" +
+      "调用此工具向人发起问询并等待答复。非必要不要调用——能自己判断就自己做。" +
+      "question 写清你的纠结点；options 可给人几个候选答案。",
+    {
+      question: z.string().describe("你的纠结点 / 要确认的问题"),
+      options: z.array(z.string()).optional().describe("可选：给人选的候选答案"),
+      context: z.string().optional().describe("可选：你已经尝试过什么"),
+    },
+    async (args: { question?: string; options?: string[]; context?: string }) => {
+      const question = String(args?.question ?? "（未给出问题）");
+      log.emit({ source: "executor", kind: "ask_human", data: { question, options: args?.options ?? null } });
+      const { answer } = await ask({
+        question,
+        options: Array.isArray(args?.options) ? args.options : undefined,
+        context: typeof args?.context === "string" ? args.context : undefined,
+        cwd,
+      });
+      log.emit({ source: "executor", kind: "ask_answer", data: { answer } });
+      return { content: [{ type: "text", text: answer }] };
+    },
+  );
+  const server = sdk.createSdkMcpServer({ name: "askhuman", version: "1.0.0", tools: [tool] });
+  return { mcpServers: { askhuman: server }, toolName: "mcp__askhuman__ask_human" };
+}
+
 /** 跑一轮 query：会话事件实时 emit 进 log（思考/工具/说话），采证据；不在 LLM 报错时抛（本轮失败交关令判）。 */
 export async function captureQuery(
   sdk: any,
-  params: { prompt: string; cwd: string; model: string; resume?: string },
+  params: { prompt: string; cwd: string; model: string; resume?: string; ask?: AskHuman },
   log: RunLog,
 ): Promise<{ sessionId: string }> {
   const acc = newEvidence();
@@ -48,13 +88,17 @@ export async function captureQuery(
   let finalText = "";
   let initDone = false;
 
+  // 举手通道：给了 ask 就注入 ask_human MCP 工具，agent 纠结/含糊时主动发飞书卡片问人（异步、不阻死）。
+  const askServer = params.ask ? makeAskServer(sdk, params.ask, params.cwd, log) : undefined;
+
   for await (const message of sdk.query({
     prompt: params.prompt,
     options: {
       cwd: params.cwd,
       model: params.model,
       permissionMode: "bypassPermissions",
-      allowedTools: ["Read", "Write", "Edit", "Bash"],
+      allowedTools: ["Read", "Write", "Edit", "Bash", ...(askServer ? [askServer.toolName] : [])],
+      ...(askServer ? { mcpServers: askServer.mcpServers } : {}),
       ...(params.resume ? { resume: params.resume } : {}),
     },
   })) {
@@ -111,6 +155,8 @@ export interface LiveExecutorConfig {
   primaryFile?: string;
   /** 把绝对 cwd 钉进首轮 prompt（默认 true），防止模型无视 cwd 写到别处。 */
   pin?: boolean;
+  /** 举手通道：给了则 agent 纠结/含糊时发飞书 ask_human 卡片问你（来自 runtimeAsker）；省略=纯全自动。 */
+  ask?: AskHuman;
 }
 
 export function makeLiveExecutor(sdk: any, cfg: LiveExecutorConfig): Executor {
@@ -171,11 +217,11 @@ export function makeLiveExecutor(sdk: any, cfg: LiveExecutorConfig): Executor {
   return {
     async start(task: string) {
       await ensureRepo();
-      const { sessionId } = await captureQuery(sdk, { prompt: pinPrompt(task), cwd: cfg.cwd, model: cfg.model }, cfg.log);
+      const { sessionId } = await captureQuery(sdk, { prompt: pinPrompt(task), cwd: cfg.cwd, model: cfg.model, ask: cfg.ask }, cfg.log);
       return snapshot(sessionId, "首轮开发（真 LLM 写文件）");
     },
     async resume(sessionId: string, feedback: string) {
-      const { sessionId: sid } = await captureQuery(sdk, { prompt: feedback, cwd: cfg.cwd, model: cfg.model, resume: sessionId }, cfg.log);
+      const { sessionId: sid } = await captureQuery(sdk, { prompt: feedback, cwd: cfg.cwd, model: cfg.model, resume: sessionId, ask: cfg.ask }, cfg.log);
       return snapshot(sid || sessionId, "据反馈 resume 续跑修正");
     },
   };

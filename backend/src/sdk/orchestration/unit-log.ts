@@ -46,6 +46,8 @@ const ICON: Record<string, string> = {
   text: "💬",
   tool_use: "🔧",
   tool_result: "↳",
+  ask_human: "🙋",
+  ask_answer: "💡",
   session_summary: "✎",
   agent_result: "↩",
   agent_error: "⚠",
@@ -80,6 +82,8 @@ function describe(e: LogEvent): string {
     case "session_init": return `${icon} 会话 ${d.sessionId ?? "-"} · ${d.model ?? "-"}`;
     case "tool_use": return `${icon} ${d.tool} ${clip(d.detail, 100)}`;
     case "tool_result": return `  ${icon} ${d.ok ? "ok" : "err"}${d.preview ? ` · ${clip(d.preview, 80)}` : ""}`;
+    case "ask_human": return `${icon} 举手问人：${clip(d.question, 90)}`;
+    case "ask_answer": return `${icon} 人答：${clip(d.answer, 90)}`;
     case "session_summary": return `${icon} 工具 ${d.toolCalls ?? 0} 次 · 改文件 [${clip(d.filesTouched, 140) || "无"}]`;
     case "agent_result": return `${icon} 自报 ${d.chars ?? 0} 字`;
     case "agent_error": return `${icon} 报错：${clip(d.errors, 140)}`;
